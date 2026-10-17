@@ -183,14 +183,15 @@ Scan the QR code with Expo Go on your phone.
 | Phase | Description | Status |
 |---|---|---|
 | 1 | Foundation — project setup, navigation scaffold, theme | ✅ Complete |
-| 2 | Auth — Login and Register screens with Firebase Auth | 🔄 In Progress |
-| 3 | Marks — Modules (Dashboard, Add/Edit Module) | ⏳ Pending |
-| 4 | Marks — Assessments (Detail, Add/Edit Assessment) | ⏳ Pending |
+| 2 | Auth — Login and Register screens with Firebase Auth | ⏳ Deferred to end (iOS Expo Go limitation) |
+| 3 | Marks — Dashboard, Add/Edit Module, Module Detail | ✅ Complete |
+| 4 | Marks — Add/Edit Assessment screens | 🔄 In Progress |
 | 5 | Goals — Goal setting and feasibility calculation | ⏳ Pending |
 | 6 | Deadlines — Deadline tracking and status logic | ⏳ Pending |
 | 7 | Insights — Analytics and performance summary | ⏳ Pending |
 | 8 | Profile — User profile and settings | ⏳ Pending |
-| 9 | Polish — Empty states, loading, error handling | ⏳ Pending |
+| 9 | Auth — Custom dev build with Firebase Auth | ⏳ Pending |
+| 10 | Polish — Empty states, loading, error handling | ⏳ Pending |
 
 ---
 
