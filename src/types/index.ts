@@ -4,8 +4,8 @@ export interface Assessment {
   mark: number;
   outOf: number;
   weighting: number;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: { toMillis: () => number } | Date;
+  updatedAt: { toMillis: () => number } | Date;
 }
 
 export interface Module {
@@ -13,14 +13,14 @@ export interface Module {
   name: string;
   code: string;
   level: string;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: { toMillis: () => number } | Date;
+  updatedAt: { toMillis: () => number } | Date;
 }
 
 export interface Goal {
   targetPercentage: number;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: { toMillis: () => number } | Date;
+  updatedAt: { toMillis: () => number } | Date;
 }
 
 export interface Deadline {
@@ -29,11 +29,11 @@ export interface Deadline {
   assessmentId: string;
   moduleName: string;
   assessmentName: string;
-  date: Date;
-  reminderDate: Date | null;
+  date: { toMillis: () => number } | Date;
+  reminderDate: { toMillis: () => number } | Date | null;
   isDone: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: { toMillis: () => number } | Date;
+  updatedAt: { toMillis: () => number } | Date;
 }
 
 export interface UserProfile {
@@ -43,6 +43,6 @@ export interface UserProfile {
   academicLevel: string;
   darkMode: boolean;
   notifications: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: { toMillis: () => number } | Date;
+  updatedAt: { toMillis: () => number } | Date;
 }
