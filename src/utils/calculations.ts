@@ -1,8 +1,6 @@
 import { Assessment } from '../types/index';
 
 // ── WEIGHTED AVERAGE ──────────────────────────────────────────
-// Calculates the current weighted average for a module
-// Only includes assessments that have all three values
 export const calculateWeightedAverage = (assessments: Assessment[]): number => {
   if (!assessments || assessments.length === 0) return 0;
 
@@ -17,7 +15,6 @@ export const calculateWeightedAverage = (assessments: Assessment[]): number => {
   });
 
   if (totalWeighting === 0) return 0;
-
   return (weightedSum / totalWeighting) * 100;
 };
 
@@ -33,8 +30,6 @@ export const calculateRemainingWeighting = (assessments: Assessment[]): number =
 };
 
 // ── REQUIRED SCORE TO REACH GOAL ─────────────────────────────
-// Returns the score needed on remaining assessments to hit the target
-// Returns null if there is no remaining weighting
 export const calculateRequiredScore = (
   assessments: Assessment[],
   targetPercentage: number
@@ -49,9 +44,10 @@ export const calculateRequiredScore = (
     }
   });
 
-  const required =
-    ((targetPercentage * 100) - currentWeightedScore) / remainingWeighting;
-
+  // required = score needed on remaining assessments as a percentage
+  // targetPercentage = currentWeightedScore + (required/100 * remainingWeighting)
+  // solving for required:
+  const required = ((targetPercentage - currentWeightedScore) / remainingWeighting) * 100;
   return required;
 };
 
@@ -71,14 +67,18 @@ export const calculateFeasibility = (
   if (targetPercentage === null) return 'No Goal';
 
   const current = calculateWeightedAverage(assessments);
-  if (current >= targetPercentage) return 'Reached';
+  const remaining = calculateRemainingWeighting(assessments);
+
+  if (remaining <= 0) {
+    return current >= targetPercentage ? 'Reached' : 'Impossible';
+  }
 
   const required = calculateRequiredScore(assessments, targetPercentage);
   if (required === null) return 'Impossible';
 
   if (required > 100) return 'Impossible';
-  if (required > 85) return 'Unlikely';
-  if (required > 70) return 'At Risk';
+  if (required > 90) return 'Unlikely';
+  if (required > 80) return 'At Risk';
   return 'On Track';
 };
 
@@ -98,7 +98,6 @@ export const calculateDirection = (assessments: Assessment[]): Direction => {
   };
 
   const sorted = [...assessments].sort((a, b) => getTime(a) - getTime(b));
-
   const withoutLast = sorted.slice(0, sorted.length - 1);
 
   const averageWith = calculateWeightedAverage(sorted);
@@ -110,7 +109,6 @@ export const calculateDirection = (assessments: Assessment[]): Direction => {
 };
 
 // ── OVERALL AVERAGE ───────────────────────────────────────────
-// Average across all modules (average of averages)
 export const calculateOverallAverage = (moduleAverages: number[]): number => {
   if (!moduleAverages || moduleAverages.length === 0) return 0;
   const sum = moduleAverages.reduce((acc, avg) => acc + avg, 0);
