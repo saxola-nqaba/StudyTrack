@@ -47,7 +47,15 @@ export default function ModuleDetailScreen() {
           const found = modules.find((m) => m.id === moduleId);
           if (found) setModule(found);
           const asmts = await fetchAssessments(moduleId);
-          setAssessments(asmts);
+          const sorted = [...asmts].sort((a, b) => {
+            const getTime = (ts: any) => {
+              if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
+              if (ts instanceof Date) return ts.getTime();
+              return 0;
+            };
+            return getTime(a.createdAt) - getTime(b.createdAt);
+          });
+          setAssessments(sorted);
         } catch (e) {
           Alert.alert('Error', 'Failed to load module data.');
         } finally {

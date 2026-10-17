@@ -88,16 +88,21 @@ export type Direction = 'up' | 'down' | 'stable';
 export const calculateDirection = (assessments: Assessment[]): Direction => {
   if (!assessments || assessments.length < 2) return 'stable';
 
-  // Sort by createdAt so we know which is most recent
-const sorted = [...assessments].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
+  const getTime = (a: Assessment): number => {
+    const ts = a.createdAt;
+    if (ts && typeof (ts as any).toMillis === 'function') {
+      return (ts as any).toMillis();
+    }
+    if (ts instanceof Date) return ts.getTime();
+    return 0;
+  };
 
-  const mostRecent = sorted[sorted.length - 1];
-  const without = sorted.slice(0, sorted.length - 1);
+  const sorted = [...assessments].sort((a, b) => getTime(a) - getTime(b));
+
+  const withoutLast = sorted.slice(0, sorted.length - 1);
 
   const averageWith = calculateWeightedAverage(sorted);
-  const averageWithout = calculateWeightedAverage(without);
+  const averageWithout = calculateWeightedAverage(withoutLast);
 
   if (averageWith > averageWithout + 1) return 'up';
   if (averageWith < averageWithout - 1) return 'down';
