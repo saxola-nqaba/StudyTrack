@@ -39,3 +39,8 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Firebase config
+src/firebase/config.ts
+# Environment variables
+.env
