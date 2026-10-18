@@ -107,7 +107,7 @@ export default function DashboardScreen() {
       {/* Fixed Header */}
       <View style={styles.header}>
         <Text style={styles.appName}>StudyTrack</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('Profile' as any)}>
+        <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
           <Ionicons name="person-circle-outline" size={32} color={colours.primary} />
         </TouchableOpacity>
       </View>
