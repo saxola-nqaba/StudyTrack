@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -15,9 +15,15 @@ import { MarksStackParamList } from '../../navigation/MarksNavigator';
 import { useModulesStore } from '../../store/useModulesStore';
 import { fetchModules } from '../../services/modules';
 import { fetchAssessments } from '../../services/assessments';
-import { calculateWeightedAverage, calculateFeasibility, calculateDirection } from '../../utils/calculations';
+import { fetchGoal } from '../../services/goals';
+import {
+  calculateWeightedAverage,
+  calculateFeasibility,
+  calculateDirection,
+} from '../../utils/calculations';
 import { colours } from '../../constants/colours';
 import { spacing } from '../../constants/spacing';
+import { Goal } from '../../types/index';
 
 type Nav = NativeStackNavigationProp<MarksStackParamList, 'Dashboard'>;
 
@@ -36,37 +42,57 @@ const feasibilityColor = (status: string) => {
   return colours.grey4;
 };
 
+interface ModuleData {
+  id: string;
+  name: string;
+  code: string;
+  level: string;
+  assessments: any[];
+  goal: Goal | null;
+  createdAt: any;
+  updatedAt: any;
+}
+
 export default function DashboardScreen() {
   const navigation = useNavigation<Nav>();
-  const { modules, setModules, setAssessments } = useModulesStore();
+  const { setModules } = useModulesStore();
+  const [modules, setLocalModules] = useState<ModuleData[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const loadData = useCallback(async () => {
-    try {
-      const mods = await fetchModules();
-      const modsWithData = await Promise.all(
-        mods.map(async (m) => {
-          const assessments = await fetchAssessments(m.id);
-          return { ...m, assessments, goal: null };
-        })
-      );
-      setModules(modsWithData);
-    } catch (e) {
-      Alert.alert('Error', 'Failed to load modules.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   useFocusEffect(
     useCallback(() => {
+      const loadData = async () => {
+        setLoading(true);
+        try {
+          const mods = await fetchModules();
+          const modsWithData = await Promise.all(
+            mods.map(async (m) => {
+              const assessments = await fetchAssessments(m.id);
+              const goal = await fetchGoal(m.id);
+              return { ...m, assessments, goal };
+            })
+          );
+          setLocalModules(modsWithData);
+          setModules(modsWithData);
+        } catch (e) {
+          Alert.alert('Error', 'Failed to load modules.');
+        } finally {
+          setLoading(false);
+        }
+      };
       loadData();
-    }, [loadData])
+    }, [])
   );
 
-  const overallAverage = modules.length > 0
-    ? modules.reduce((sum, m) => sum + calculateWeightedAverage(m.assessments), 0) / modules.length
+  const moduleAverages = modules.map((m) => calculateWeightedAverage(m.assessments));
+  const overallAverage = moduleAverages.length > 0
+    ? moduleAverages.reduce((sum, avg) => sum + avg, 0) / moduleAverages.length
     : 0;
+
+  const modulesWithGoals = modules.filter((m) => m.goal !== null);
+  const overallGoal = modulesWithGoals.length > 0
+    ? modulesWithGoals.reduce((sum, m) => sum + (m.goal?.targetPercentage ?? 0), 0) / modulesWithGoals.length
+    : null;
 
   if (loading) {
     return (
@@ -78,7 +104,7 @@ export default function DashboardScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Fixed Header */}
       <View style={styles.header}>
         <Text style={styles.appName}>StudyTrack</Text>
         <TouchableOpacity onPress={() => navigation.navigate('Profile' as any)}>
@@ -86,21 +112,38 @@ export default function DashboardScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Fixed Overall Card — does not scroll */}
+      <View style={styles.overallCard}>
+        <View style={styles.overallLeft}>
+          <Text style={styles.overallLabel}>Overall Average</Text>
+          <Text style={styles.overallPercent}>{overallAverage.toFixed(1)}%</Text>
+          <View style={styles.overallBarTrack}>
+            <View style={[styles.overallBarFill, { width: `${Math.min(overallAverage, 100)}%` }]} />
+          </View>
+        </View>
+        {overallGoal !== null && (
+          <View style={styles.overallRight}>
+            <Text style={styles.goalLabel}>Avg Goal</Text>
+            <Text style={styles.goalValue}>{overallGoal.toFixed(1)}%</Text>
+            <Text style={[
+              styles.goalStatus,
+              { color: overallAverage >= overallGoal ? colours.success : colours.warning }
+            ]}>
+              {overallAverage >= overallGoal ? '↑ On track' : '↓ Below'}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* Scrollable Module List */}
       <FlatList
         data={modules}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         ListHeaderComponent={
-          <View style={styles.overallCard}>
-            <Text style={styles.overallLabel}>Overall Average</Text>
-            <Text style={styles.overallPercent}>
-              {overallAverage.toFixed(1)}%
-            </Text>
-            <View style={styles.overallBarTrack}>
-              <View style={[styles.overallBarFill, { width: `${Math.min(overallAverage, 100)}%` }]} />
-            </View>
-            <Text style={styles.moduleCount}>{modules.length} module{modules.length !== 1 ? 's' : ''} tracked</Text>
-          </View>
+          <Text style={styles.sectionLabel}>
+            {modules.length} module{modules.length !== 1 ? 's' : ''} tracked
+          </Text>
         }
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -112,7 +155,10 @@ export default function DashboardScreen() {
         renderItem={({ item }) => {
           const avg = calculateWeightedAverage(item.assessments);
           const direction = calculateDirection(item.assessments);
-          const feasibility = calculateFeasibility(item.assessments, item.goal?.targetPercentage ?? null);
+          const feasibility = calculateFeasibility(
+            item.assessments,
+            item.goal?.targetPercentage ?? null
+          );
           const { icon, color } = directionIcon(direction);
           const barColor = feasibilityColor(feasibility);
 
@@ -168,18 +214,73 @@ const styles = StyleSheet.create({
     borderBottomColor: colours.grey3,
   },
   appName: { fontSize: 22, fontWeight: '800', color: colours.primary, letterSpacing: -0.5 },
-  list: { padding: spacing.screenPadding, paddingBottom: 100 },
   overallCard: {
     backgroundColor: colours.primary,
-    borderRadius: spacing.borderRadiusLarge,
-    padding: 20,
-    marginBottom: 20,
+    paddingHorizontal: spacing.screenPadding,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  overallLabel: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: 1 },
-  overallPercent: { fontSize: 52, fontWeight: '800', color: colours.white, letterSpacing: -2, lineHeight: 60 },
-  overallBarTrack: { height: 5, backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 3, marginTop: 12, overflow: 'hidden' },
-  overallBarFill: { height: '100%', backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 3 },
-  moduleCount: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 6 },
+  overallLeft: { flex: 1 },
+  overallLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.7)',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  overallPercent: {
+    fontSize: 44,
+    fontWeight: '800',
+    color: colours.white,
+    letterSpacing: -1.5,
+    lineHeight: 52,
+  },
+  overallBarTrack: {
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderRadius: 2,
+    marginTop: 8,
+    overflow: 'hidden',
+    marginRight: 16,
+  },
+  overallBarFill: {
+    height: '100%',
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 2,
+  },
+  overallRight: {
+    alignItems: 'flex-end',
+    paddingLeft: 16,
+  },
+  goalLabel: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.6)',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  goalValue: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: colours.white,
+    letterSpacing: -0.5,
+  },
+  goalStatus: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colours.grey5,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 12,
+  },
+  list: { padding: spacing.screenPadding, paddingBottom: 100 },
   moduleCard: {
     backgroundColor: colours.white,
     borderRadius: spacing.borderRadius,
@@ -195,7 +296,13 @@ const styles = StyleSheet.create({
   moduleInfo: { flex: 1 },
   moduleName: { fontSize: 15, fontWeight: '700', color: colours.text, marginBottom: 2 },
   moduleCode: { fontSize: 11, color: colours.grey5, marginBottom: 6 },
-  barTrack: { height: 4, backgroundColor: colours.grey2, borderRadius: 2, overflow: 'hidden', marginBottom: 4 },
+  barTrack: {
+    height: 4,
+    backgroundColor: colours.grey2,
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
   barFill: { height: '100%', borderRadius: 2 },
   moduleMeta: { fontSize: 11, color: colours.grey5 },
   moduleRight: { alignItems: 'center', gap: 4 },

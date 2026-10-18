@@ -82,11 +82,43 @@ export default function GoalsScreen() {
     );
   }
 
+    const overallAverage = data.length > 0
+    ? data.reduce((sum, item) => sum + calculateWeightedAverage(item.assessments), 0) / data.length
+    : 0;
+
+  const modulesWithGoals = data.filter((item) => item.goal !== null);
+  const avgGoal = modulesWithGoals.length > 0
+    ? modulesWithGoals.reduce((sum, item) => sum + (item.goal?.targetPercentage ?? 0), 0) / modulesWithGoals.length
+    : null;
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.appName}>Goals</Text>
       </View>
+
+      {avgGoal !== null && (
+        <View style={styles.summaryStrip}>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>Overall Average</Text>
+            <Text style={styles.summaryValue}>{overallAverage.toFixed(1)}%</Text>
+          </View>
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>Avg Goal</Text>
+            <Text style={styles.summaryValue}>{avgGoal.toFixed(1)}%</Text>
+          </View>
+          <View style={styles.summaryStatus}>
+            <Text style={[
+              styles.summaryStatusText,
+              { color: overallAverage >= avgGoal ? colours.success : colours.warning }
+            ]}>
+              {overallAverage >= avgGoal ? '↑ On Track' : '↓ Below'}
+            </Text>
+          </View>
+        </View>
+      )}
+
 
       <FlatList
         data={data}
@@ -219,4 +251,36 @@ const styles = StyleSheet.create({
   },
   barFill: { height: '100%', borderRadius: 3 },
   noteText: { fontSize: 12, color: colours.grey5, marginTop: 2 },
+
+    summaryStrip: {
+    backgroundColor: colours.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.screenPadding,
+    paddingVertical: 20,
+  },
+  summaryValue: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: colours.white,
+    letterSpacing: -1,
+  },
+  summaryItem: { flex: 1 },
+  summaryLabel: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  
+  summaryDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    marginHorizontal: 16,
+  },
+  summaryStatus: { alignItems: 'flex-end' },
+  summaryStatusText: { fontSize: 14, fontWeight: '700' },
 });
