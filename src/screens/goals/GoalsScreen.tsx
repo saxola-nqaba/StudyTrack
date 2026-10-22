@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
@@ -9,6 +8,7 @@ import {
   Alert,
   RefreshControl,
 } from 'react-native';
+import { Text } from '../../components/AppText';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -122,7 +122,23 @@ export default function GoalsScreen() {
         </View>
       )}
 
+      {/* Fixed goals count — sits under the strip and does not scroll */}
+      {data.length > 0 && (
+        <View style={styles.countBar}>
+          <Text style={styles.countLabel}>
+            {modulesWithGoals.length === 0
+              ? 'No goals set'
+              : `${modulesWithGoals.length} goal${modulesWithGoals.length !== 1 ? 's' : ''} set`}
+            <Text style={styles.countOf}>
+              {modulesWithGoals.length === 0
+                ? ' · tap a module to add one'
+                : ` · ${data.length} module${data.length !== 1 ? 's' : ''}`}
+            </Text>
+          </Text>
+        </View>
+      )}
 
+      {/* Scrollable list — only the cards move */}
       <FlatList
         ref={listRef}
         data={data}
@@ -219,7 +235,21 @@ const makeStyles = (colours: Palette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colours.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colours.background },
   // No + button on Goals, so only a small gap above the tab bar
-  list: { padding: spacing.screenPadding, paddingBottom: 16 },
+  countBar: {
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 16,
+    paddingBottom: 10,
+    backgroundColor: colours.background,
+  },
+  countLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colours.grey5,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  countOf: { fontWeight: '500', color: colours.grey4 },
+  list: { paddingHorizontal: spacing.screenPadding, paddingTop: 2, paddingBottom: 16 },
   empty: { alignItems: 'center', paddingTop: 60, gap: 8 },
   emptyTitle: { fontSize: 17, fontWeight: '700', color: colours.grey5 },
   emptyText: { fontSize: 14, color: colours.grey4 },

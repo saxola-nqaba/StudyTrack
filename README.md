@@ -46,6 +46,11 @@ Built from a high-fidelity prototype originally designed as a final-year univers
 - Weighting completeness check per module
 - Deadline summary with counts and next due date
 
+### Account
+- Email/password sign-in, registration and password reset
+- Stays signed in between app launches
+- Each user's data is private (Firestore security rules)
+
 ### Profile
 - User profile management
 - Dark mode toggle (persisted across sessions)
@@ -60,11 +65,12 @@ Built from a high-fidelity prototype originally designed as a final-year univers
 | Framework | React Native (Expo SDK 57) |
 | Language | TypeScript |
 | Database | Firebase Firestore |
-| Authentication | Firebase Auth |
+| Authentication | Firebase Auth (email/password, persisted with AsyncStorage) |
 | State Management | Zustand |
 | Navigation | React Navigation v7 (Bottom Tabs + Stack) |
 | Date Handling | date-fns |
 | Icons | @expo/vector-icons (Ionicons) + custom PNG tab icons |
+| Font | Plus Jakarta Sans (expo-font) |
 | Theming | React Context + AsyncStorage (light / dark) |
 
 ---
@@ -106,13 +112,13 @@ required ≤ 80%     →  On Track
 
 ```
 src/
-├── components/         # AppIcon, FormField, ScreenHeader
+├── components/         # AppIcon, AppText (font), FormField, ScreenHeader
 ├── constants/          # colours (light + dark palettes), spacing
 ├── firebase/           # Firebase config (gitignored)
 ├── hooks/              # useFocusLoad (first-load spinner, quiet refresh, pull-to-refresh)
 ├── navigation/         # AppNavigator, MainNavigator, tab stack navigators
 ├── screens/
-│   ├── auth/           # Login, Register (built, connected in Phase 10)
+│   ├── auth/           # Login, Register, ForgotPassword
 │   ├── marks/          # Dashboard, ModuleDetail, Add/Edit Module, Add/Edit Assessment
 │   ├── goals/          # Goals, EditGoal
 │   ├── deadlines/      # Deadlines, Add/Edit Deadline
@@ -120,7 +126,7 @@ src/
 │   └── profile/        # Profile
 ├── services/           # Firestore CRUD per entity + user.ts (single source of user ID)
 ├── store/              # Zustand auth store
-├── theme/              # ThemeContext — light/dark mode, persisted on device
+├── theme/              # ThemeContext (light/dark, persisted) + fonts
 ├── types/              # TypeScript interfaces
 └── utils/              # calculations, validation, dates, errors
 
@@ -174,9 +180,14 @@ const firebaseConfig = {
   appId: "YOUR_APP_ID",
 };
 
-const app = initializeApp(firebaseConfig);
+export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 ```
+
+Then in the Firebase console:
+
+1. **Authentication → Sign-in method** → enable **Email/Password**.
+2. **Firestore Database → Rules** → paste the contents of [`firestore.rules`](firestore.rules) → **Publish**. Each signed-in user can only read and write their own data under `users/{uid}`.
 
 ### Run
 
@@ -201,7 +212,7 @@ Scan the QR code with Expo Go on your phone.
 | 7 | Insights — Analytics and performance summary | ✅ Complete |
 | 8 | Profile — User profile and settings | ✅ Complete |
 | 9 | Polish — Dark mode, custom icons, validation, safe areas, loading & error UX | ✅ Complete |
-| 10 | Auth — Firebase Auth (Expo Go first, custom build only if needed) | ⏳ Next |
+| 10 | Auth — Login, Register, Forgot password, Sign out, per-user data + security rules | ✅ Complete |
 
 ---
 

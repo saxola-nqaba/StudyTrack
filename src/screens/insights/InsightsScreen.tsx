@@ -1,13 +1,13 @@
 import React, { useState, useMemo, useRef } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   ActivityIndicator,
   Alert,
   RefreshControl,
 } from 'react-native';
+import { Text } from '../../components/AppText';
 import { Ionicons } from '@expo/vector-icons';
 import AppIcon from '../../components/AppIcon';
 import { fetchModules } from '../../services/modules';
@@ -196,7 +196,7 @@ export default function InsightsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionTitleRow}>
             <AppIcon name="insights" size={20} />
-            <Text style={styles.sectionTitle}>Module Ranking</Text>
+            <Text style={styles.sectionTitle}>Module ranking</Text>
           </View>
           {ranked.map((item, index) => {
             const hasMarks = item.assessments.length > 0;
@@ -242,7 +242,7 @@ export default function InsightsScreen() {
           <View style={styles.section}>
             <View style={styles.sectionTitleRow}>
             <AppIcon name="goals" size={20} />
-            <Text style={styles.sectionTitle}>Goal Summary</Text>
+            <Text style={styles.sectionTitle}>Goal summary</Text>
           </View>
             {modulesWithGoals.map((item) => {
               const feasibility = calculateFeasibility(
@@ -280,7 +280,7 @@ export default function InsightsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionTitleRow}>
             <AppIcon name="document" size={20} />
-            <Text style={styles.sectionTitle}>Weighting Summary</Text>
+            <Text style={styles.sectionTitle}>Weighting summary</Text>
           </View>
           {moduleData.map((item) => {
             const total = calculateTotalWeighting(item.assessments);
@@ -327,7 +327,7 @@ export default function InsightsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionTitleRow}>
             <AppIcon name="deadlines" size={20} />
-            <Text style={styles.sectionTitle}>Deadline Summary</Text>
+            <Text style={styles.sectionTitle}>Deadline summary</Text>
           </View>
 
           <View style={styles.deadlineTiles}>
@@ -429,11 +429,10 @@ const makeStyles = (colours: Palette) => StyleSheet.create({
   },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   sectionTitle: {
-    fontSize: 13,
+    fontSize: 16,
     fontWeight: '700',
-    color: colours.accent,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    color: colours.text,
+    letterSpacing: -0.2,
   },
 
   // Ranking

@@ -95,3 +95,41 @@ export const validateDeadline = (
   if (!buildValidDate(day, month, year)) errors.date = 'Enter a real date, e.g. 28 / 02 / 2027';
   return errors;
 };
+
+// ── AUTH ──────────────────────────────────────────────────────
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export type LoginField = 'email' | 'password';
+
+export const validateLogin = (email: string, password: string): FieldErrors<LoginField> => {
+  const errors: FieldErrors<LoginField> = {};
+  if (!email.trim()) errors.email = 'Email is required';
+  else if (!EMAIL_RE.test(email.trim())) errors.email = 'Enter a valid email, e.g. you@email.com';
+  if (!password) errors.password = 'Password is required';
+  return errors;
+};
+
+export type RegisterField = 'fullName' | 'email' | 'password' | 'confirm';
+
+export const validateRegister = (
+  fullName: string,
+  email: string,
+  password: string,
+  confirm: string
+): FieldErrors<RegisterField> => {
+  const errors: FieldErrors<RegisterField> = {};
+  if (!fullName.trim()) errors.fullName = 'Full name is required';
+  if (!email.trim()) errors.email = 'Email is required';
+  else if (!EMAIL_RE.test(email.trim())) errors.email = 'Enter a valid email, e.g. you@email.com';
+  if (password.length < 6) errors.password = 'At least 6 characters';
+  if (!confirm) errors.confirm = 'Re-enter your password';
+  else if (confirm !== password) errors.confirm = "Passwords don't match";
+  return errors;
+};
+
+export const validateEmailOnly = (email: string): FieldErrors<'email'> => {
+  const errors: FieldErrors<'email'> = {};
+  if (!email.trim()) errors.email = 'Email is required';
+  else if (!EMAIL_RE.test(email.trim())) errors.email = 'Enter a valid email, e.g. you@email.com';
+  return errors;
+};

@@ -1,20 +1,20 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   ActivityIndicator,
   Alert,
   Switch,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { Text, TextInput } from '../../components/AppText';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchProfile, saveProfile, createProfile } from '../../services/profile';
+import { signOut, currentUserEmail } from '../../services/auth';
 import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
 import { useTheme } from '../../theme/ThemeContext';
 import { Palette } from '../../constants/colours';
@@ -51,7 +51,6 @@ export default function ProfileScreen() {
   // Create fields
   const [newFullName, setNewFullName] = useState('');
   const [newUsername, setNewUsername] = useState('');
-  const [newEmail, setNewEmail] = useState('');
   const [newAcademicLevel, setNewAcademicLevel] = useState('');
 
   useFocusEffect(
@@ -123,12 +122,12 @@ export default function ProfileScreen() {
   };
 
   const handleCreate = async () => {
-    const found = validateProfile(newFullName, newEmail);
+    const found = validateProfile(newFullName, '');
     setErrors(found);
     if (hasErrors(found)) return;
     setSaving(true);
     try {
-      await createProfile(newFullName.trim(), newUsername.trim(), newEmail.trim(), newAcademicLevel.trim());
+      await createProfile(newFullName.trim(), newUsername.trim(), currentUserEmail(), newAcademicLevel.trim());
       const p = await fetchProfile();
       setProfile(p);
       if (p) {
@@ -153,6 +152,27 @@ export default function ProfileScreen() {
     setAcademicLevel(profile?.academicLevel || '');
     setErrors({});
     setEditing(false);
+  };
+
+  const [signingOut, setSigningOut] = useState(false);
+
+  const handleSignOut = () => {
+    Alert.alert('Sign out', 'You can sign back in any time with your email and password.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: async () => {
+          setSigningOut(true);
+          try {
+            await signOut(); // AppNavigator switches back to the Login screen
+          } catch (e) {
+            showError("Couldn't sign out", e);
+            setSigningOut(false);
+          }
+        },
+      },
+    ]);
   };
 
   const getInitials = (name: string) => {
@@ -199,7 +219,7 @@ export default function ProfileScreen() {
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <FormField label="Full Name *" value={newFullName} onChangeText={(v) => { setNewFullName(v); clearError('fullName'); }} placeholder="Your full name" error={errors.fullName} />
           <FormField label="Username" value={newUsername} onChangeText={setNewUsername} placeholder="Choose a username" autoCapitalize="none" />
-          <FormField label="Email" value={newEmail} onChangeText={(v) => { setNewEmail(v); clearError('email'); }} placeholder="you@email.com" keyboardType="email-address" autoCapitalize="none" error={errors.email} />
+          <FormField label="Email" value={currentUserEmail()} editable={false} hint="Your sign-in email" />
           <FormField label="Academic Level" value={newAcademicLevel} onChangeText={setNewAcademicLevel} placeholder="e.g. Third Year" />
           <TouchableOpacity style={styles.btnPrimary} onPress={handleCreate} disabled={saving}>
             {saving ? <ActivityIndicator color={colours.onPrimary} /> : <Text style={styles.btnPrimaryText}>Save Profile</Text>}
@@ -221,7 +241,7 @@ export default function ProfileScreen() {
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <FormField label="Full Name *" value={fullName} onChangeText={(v) => { setFullName(v); clearError('fullName'); }} placeholder="Your full name" error={errors.fullName} />
           <FormField label="Username" value={username} onChangeText={setUsername} placeholder="Username" autoCapitalize="none" />
-          <FormField label="Email" value={email} onChangeText={(v) => { setEmail(v); clearError('email'); }} placeholder="you@email.com" keyboardType="email-address" autoCapitalize="none" error={errors.email} />
+          <FormField label="Email" value={currentUserEmail()} editable={false} hint="Your sign-in email can't be changed here" />
           <FormField label="Academic Level" value={academicLevel} onChangeText={setAcademicLevel} placeholder="e.g. Third Year" />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -246,7 +266,7 @@ export default function ProfileScreen() {
           </View>
           <Text style={styles.profileName}>{profile?.fullName}</Text>
           {profile?.email ? (
-            <Text style={styles.profileEmail}>{profile.email}</Text>
+            <Text style={styles.profileEmail}>{profile.email || currentUserEmail()}</Text>
           ) : null}
         </View>
 
@@ -285,6 +305,23 @@ export default function ProfileScreen() {
             />
           </View>
         </View>
+
+        {/* Sign out */}
+        <TouchableOpacity
+          style={styles.signOutBtn}
+          onPress={handleSignOut}
+          disabled={signingOut}
+          accessibilityRole="button"
+        >
+          {signingOut
+            ? <ActivityIndicator color={colours.danger} />
+            : (
+              <View style={styles.signOutRow}>
+                <Ionicons name="log-out-outline" size={18} color={colours.danger} />
+                <Text style={styles.signOutText}>Sign out</Text>
+              </View>
+            )}
+        </TouchableOpacity>
 
         <Text style={styles.version}>StudyTrack v1.0.0</Text>
       </ScrollView>
@@ -356,6 +393,17 @@ const makeStyles = (colours: Palette) => StyleSheet.create({
     marginTop: 8,
   },
   btnPrimaryText: { color: colours.onPrimary, fontSize: 15, fontWeight: '700' },
+  signOutBtn: {
+    backgroundColor: colours.card,
+    borderRadius: spacing.borderRadius,
+    borderWidth: 1.5,
+    borderColor: colours.grey3,
+    padding: 15,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  signOutRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  signOutText: { color: colours.danger, fontSize: 15, fontWeight: '600' },
   version: {
     textAlign: 'center',
     fontSize: 12,

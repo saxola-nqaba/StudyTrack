@@ -1,22 +1,24 @@
 import React, { useState, useMemo } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   ActivityIndicator,
-  Alert,
+  View,
 } from 'react-native';
+import { Text } from '../../components/AppText';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
 import { registerUser } from '../../services/auth';
 import { useTheme } from '../../theme/ThemeContext';
 import { Palette } from '../../constants/colours';
 import { spacing } from '../../constants/spacing';
+import ScreenHeader from '../../components/ScreenHeader';
+import FormField from '../../components/FormField';
+import { showError } from '../../utils/errors';
+import { validateRegister, hasErrors, FieldErrors, RegisterField } from '../../utils/validation';
 
 type Props = {
   navigation: StackNavigationProp<AuthStackParamList, 'Register'>;
@@ -25,110 +27,114 @@ type Props = {
 export default function RegisterScreen({ navigation }: Props) {
   const { colours } = useTheme();
   const styles = useMemo(() => makeStyles(colours), [colours]);
+
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [academicLevel, setAcademicLevel] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<FieldErrors<RegisterField>>({});
+
+  const clearError = (field: RegisterField) =>
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
 
   const handleRegister = async () => {
-    if (!fullName.trim() || !username.trim() || !email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please fill in all required fields.');
-      return;
-    }
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters.');
-      return;
-    }
+    const found = validateRegister(fullName, email, password, confirm);
+    setErrors(found);
+    if (hasErrors(found)) return;
 
     setLoading(true);
     try {
       await registerUser(email.trim(), password, fullName.trim(), username.trim(), academicLevel.trim());
-    } catch (error: any) {
-      Alert.alert('Registration Failed', error.message || 'Something went wrong.');
-    } finally {
+      // AppNavigator switches to the tabs as soon as the account exists
+    } catch (e) {
+      showError("Couldn't create your account", e);
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <View style={styles.header}>
-          <Text style={styles.appName}>StudyTrack</Text>
-          <Text style={styles.tagline}>Create your account</Text>
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScreenHeader title="Create account" onBack={() => navigation.goBack()} />
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <Text style={styles.intro}>Track your marks, set goals and see what you need to reach them.</Text>
+
+        <FormField
+          label="Full name *"
+          value={fullName}
+          onChangeText={(v) => { setFullName(v); clearError('fullName'); }}
+          placeholder="Your full name"
+          autoComplete="name"
+          textContentType="name"
+          error={errors.fullName}
+        />
+        <FormField
+          label="Email *"
+          value={email}
+          onChangeText={(v) => { setEmail(v); clearError('email'); }}
+          placeholder="you@email.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoComplete="email"
+          textContentType="emailAddress"
+          error={errors.email}
+        />
+        <View style={styles.row}>
+          <View style={styles.rowItem}>
+            <FormField
+              label="Username"
+              value={username}
+              onChangeText={setUsername}
+              placeholder="Optional"
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={styles.rowItem}>
+            <FormField
+              label="Academic level"
+              value={academicLevel}
+              onChangeText={setAcademicLevel}
+              placeholder="e.g. Third Year"
+            />
+          </View>
         </View>
+        <FormField
+          label="Password *"
+          value={password}
+          onChangeText={(v) => { setPassword(v); clearError('password'); }}
+          placeholder="At least 6 characters"
+          secureTextEntry
+          autoComplete="new-password"
+          textContentType="newPassword"
+          error={errors.password}
+        />
+        <FormField
+          label="Confirm password *"
+          value={confirm}
+          onChangeText={(v) => { setConfirm(v); clearError('confirm'); }}
+          placeholder="Type it again"
+          secureTextEntry
+          autoComplete="new-password"
+          textContentType="newPassword"
+          error={errors.confirm}
+        />
 
-        <View style={styles.form}>
-          <Text style={styles.label}>Full Name *</Text>
-          <TextInput
-            style={styles.input}
-            value={fullName}
-            onChangeText={setFullName}
-            placeholder="Your full name"
-            placeholderTextColor={colours.grey4}
-          />
+        <TouchableOpacity style={styles.btnPrimary} onPress={handleRegister} disabled={loading} accessibilityRole="button">
+          {loading
+            ? <ActivityIndicator color={colours.onPrimary} />
+            : <Text style={styles.btnPrimaryText}>Create account</Text>}
+        </TouchableOpacity>
 
-          <Text style={styles.label}>Username *</Text>
-          <TextInput
-            style={styles.input}
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-            placeholder="Choose a username"
-            placeholderTextColor={colours.grey4}
-          />
-
-          <Text style={styles.label}>Email *</Text>
-          <TextInput
-            style={styles.input}
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            placeholder="you@email.com"
-            placeholderTextColor={colours.grey4}
-          />
-
-          <Text style={styles.label}>Password *</Text>
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            placeholder="Min. 6 characters"
-            placeholderTextColor={colours.grey4}
-          />
-
-          <Text style={styles.label}>Academic Level</Text>
-          <TextInput
-            style={styles.input}
-            value={academicLevel}
-            onChangeText={setAcademicLevel}
-            placeholder="e.g. Third Year"
-            placeholderTextColor={colours.grey4}
-          />
-
-          <TouchableOpacity
-            style={styles.btnPrimary}
-            onPress={handleRegister}
-            disabled={loading}
-          >
-            {loading
-              ? <ActivityIndicator color={colours.onPrimary} />
-              : <Text style={styles.btnPrimaryText}>Create Account</Text>
-            }
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.btnSecondary}
-            onPress={() => navigation.goBack()}
-          >
-            <Text style={styles.btnSecondaryText}>Already have an account? Sign In</Text>
+        <View style={styles.switchRow}>
+          <Text style={styles.switchText}>Already have an account?</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} accessibilityRole="button">
+            <Text style={styles.linkText}> Sign in</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -138,22 +144,10 @@ export default function RegisterScreen({ navigation }: Props) {
 
 const makeStyles = (colours: Palette) => StyleSheet.create({
   flex: { flex: 1, backgroundColor: colours.background },
-  container: { flexGrow: 1, justifyContent: 'center', padding: spacing.screenPadding },
-  header: { alignItems: 'center', marginBottom: 40 },
-  appName: { fontSize: 36, fontWeight: '800', color: colours.accent, letterSpacing: -1 },
-  tagline: { fontSize: 14, color: colours.textSoft, marginTop: 6 },
-  form: { gap: 8 },
-  label: { fontSize: 12, fontWeight: '700', color: colours.textSoft, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
-  input: {
-    backgroundColor: colours.card,
-    borderWidth: 1.5,
-    borderColor: colours.grey3,
-    borderRadius: spacing.borderRadius,
-    padding: 13,
-    fontSize: 15,
-    color: colours.text,
-    marginBottom: 12,
-  },
+  content: { padding: spacing.screenPadding, paddingTop: 20, paddingBottom: 40 },
+  intro: { fontSize: 14, color: colours.textSoft, lineHeight: 20, marginBottom: 20 },
+  row: { flexDirection: 'row', gap: 12 },
+  rowItem: { flex: 1 },
   btnPrimary: {
     backgroundColor: colours.primary,
     borderRadius: spacing.borderRadius,
@@ -162,6 +156,7 @@ const makeStyles = (colours: Palette) => StyleSheet.create({
     marginTop: 8,
   },
   btnPrimaryText: { color: colours.onPrimary, fontSize: 15, fontWeight: '700' },
-  btnSecondary: { alignItems: 'center', padding: 12, marginTop: 4 },
-  btnSecondaryText: { color: colours.accent, fontSize: 14, fontWeight: '500' },
+  switchRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 20 },
+  switchText: { color: colours.textSoft, fontSize: 14 },
+  linkText: { color: colours.accent, fontSize: 14, fontWeight: '600' },
 });

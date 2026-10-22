@@ -1,5 +1,13 @@
 import React, { forwardRef, useMemo } from 'react';
-import { View, Text, TextInput, TextInputProps, StyleSheet, StyleProp, ViewStyle } from 'react-native';
+import {
+  View,
+  TextInputProps,
+  StyleSheet,
+  StyleProp,
+  ViewStyle,
+} from 'react-native';
+import { Text, TextInput } from './AppText';
+import type { TextInput as RNTextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { Palette } from '../constants/colours';
@@ -18,7 +26,7 @@ interface Props extends TextInputProps {
   containerStyle?: StyleProp<ViewStyle>;
 }
 
-const FormField = forwardRef<TextInput, Props>(
+const FormField = forwardRef<RNTextInput, Props>(
   ({ label, error, hint, containerStyle, style, ...inputProps }, ref) => {
     const { colours, isDark } = useTheme();
     const styles = useMemo(() => makeStyles(colours), [colours]);

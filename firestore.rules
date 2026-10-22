@@ -1,0 +1,25 @@
+rules_version = '2';
+
+// StudyTrack — Firestore security rules
+//
+// Every user's data lives under users/{uid}:
+//   users/{uid}                                  profile
+//   users/{uid}/modules/{moduleId}               modules
+//   users/{uid}/modules/{moduleId}/assessments   assessments
+//   users/{uid}/modules/{moduleId}/goalData      goal
+//   users/{uid}/deadlines/{deadlineId}           deadlines
+//
+// A signed-in user can read and write ONLY their own tree.
+// Everything else is denied by default.
+//
+// Paste this into Firebase console → Firestore Database → Rules → Publish.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // {document=**} also matches users/{uid} itself (rules version 2)
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

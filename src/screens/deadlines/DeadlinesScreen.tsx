@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   SectionList,
   ScrollView,
@@ -10,6 +9,7 @@ import {
   Alert,
   RefreshControl,
 } from 'react-native';
+import { Text } from '../../components/AppText';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
