@@ -27,11 +27,11 @@ Built from a high-fidelity prototype originally designed as a final-year univers
 ### Goals
 - Set a target percentage per module
 - Feasibility status calculated automatically:
-  - ✅ **Reached** — current average meets or exceeds target
-  - 🟢 **On Track** — achievable with ≤70% on remaining assessments
-  - 🟡 **At Risk** — requires 70–85% on remaining assessments
-  - 🟠 **Unlikely** — requires 85–100% on remaining assessments
-  - 🔴 **Impossible** — would require more than 100%
+  - ✅ **Reached** — target is guaranteed: either all weighting is complete and the average meets the target, or the marks already banked meet it even with 0% on the rest ("secured")
+  - 🟢 **On Track** — requires ≤80% on remaining assessments
+  - 🟡 **At Risk** — requires 80–90% on remaining assessments
+  - 🟠 **Unlikely** — requires 90–100% on remaining assessments
+  - 🔴 **Impossible** — would require more than 100%, or all weighting is complete and the target was missed
 
 ### Deadlines
 - Track assignment and assessment due dates
@@ -64,7 +64,8 @@ Built from a high-fidelity prototype originally designed as a final-year univers
 | State Management | Zustand |
 | Navigation | React Navigation v7 (Bottom Tabs + Stack) |
 | Date Handling | date-fns |
-| Icons | @expo/vector-icons (Ionicons) |
+| Icons | @expo/vector-icons (Ionicons) + custom PNG tab icons |
+| Theming | React Context + AsyncStorage (light / dark) |
 
 ---
 
@@ -77,18 +78,26 @@ All calculations are performed client-side from raw assessment data. No averages
 weightedAverage = (Σ(mark / outOf × weighting) / Σ(weighting)) × 100
 ```
 
+### Overall Average
+```
+overallAverage = mean of module averages, counting only modules that have at least one mark
+```
+
 ### Required Score to Reach Goal
 ```
-requiredScore = ((target × totalWeighting) - currentWeightedScore) / remainingWeighting
+currentWeightedScore = Σ(mark / outOf × weighting)
+remainingWeighting   = 100 - Σ(weighting)
+requiredScore        = ((target - currentWeightedScore) / remainingWeighting) × 100
 ```
 
 ### Goal Feasibility Thresholds
 ```
-required > 100%  →  Impossible
-required > 85%   →  Unlikely
-required > 70%   →  At Risk
-required ≤ 70%   →  On Track
-current ≥ target →  Reached
+no weighting left  →  Reached if average ≥ target, otherwise Impossible
+required ≤ 0%      →  Reached (secured)
+required > 100%    →  Impossible
+required > 90%     →  Unlikely
+required > 80%     →  At Risk
+required ≤ 80%     →  On Track
 ```
 
 ---
@@ -97,24 +106,25 @@ current ≥ target →  Reached
 
 ```
 src/
-├── components/
-│   ├── cards/          # ModuleCard, AssessmentCard, GoalCard, DeadlineCard
-│   ├── common/         # ProgressBar, StatusBadge, DirectionIndicator, EmptyState
-│   └── forms/          # FormInput, PrimaryButton, SecondaryButton
-├── constants/          # colours, typography, spacing
+├── components/         # AppIcon, FormField, ScreenHeader
+├── constants/          # colours (light + dark palettes), spacing
 ├── firebase/           # Firebase config (gitignored)
+├── hooks/              # useFocusLoad (first-load spinner, quiet refresh, pull-to-refresh)
 ├── navigation/         # AppNavigator, MainNavigator, tab stack navigators
 ├── screens/
-│   ├── auth/           # Login, Register
+│   ├── auth/           # Login, Register (built, connected in Phase 10)
 │   ├── marks/          # Dashboard, ModuleDetail, Add/Edit Module, Add/Edit Assessment
 │   ├── goals/          # Goals, EditGoal
-│   ├── deadlines/      # Deadlines, AddDeadline
+│   ├── deadlines/      # Deadlines, Add/Edit Deadline
 │   ├── insights/       # Insights
 │   └── profile/        # Profile
-├── services/           # Firestore CRUD operations per entity
-├── store/              # Zustand stores (auth, modules, goals, deadlines)
+├── services/           # Firestore CRUD per entity + user.ts (single source of user ID)
+├── store/              # Zustand auth store
+├── theme/              # ThemeContext — light/dark mode, persisted on device
 ├── types/              # TypeScript interfaces
-└── utils/              # calculations, validation, dates
+└── utils/              # calculations, validation, dates, errors
+
+assets/icons/           # Custom Canva icons (@1x/@2x/@3x)
 ```
 
 ---
@@ -190,8 +200,8 @@ Scan the QR code with Expo Go on your phone.
 | 6 | Deadlines — Deadline tracking and status logic | ✅ Complete |
 | 7 | Insights — Analytics and performance summary | ✅ Complete |
 | 8 | Profile — User profile and settings | ✅ Complete |
-| 9 | Polish — Empty states, tab icons, dark mode, UX | 🔄 In Progress |
-| 10 | Auth — Custom Expo build with Firebase Auth | ⏳ Pending |
+| 9 | Polish — Dark mode, custom icons, validation, safe areas, loading & error UX | ✅ Complete |
+| 10 | Auth — Firebase Auth (Expo Go first, custom build only if needed) | ⏳ Next |
 
 ---
 

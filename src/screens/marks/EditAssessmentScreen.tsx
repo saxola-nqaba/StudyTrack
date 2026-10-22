@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,16 +12,24 @@ import {
   Alert,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { MarksStackParamList } from '../../navigation/MarksNavigator';
 import { fetchAssessments, updateAssessment, deleteAssessment } from '../../services/assessments';
-import { colours } from '../../constants/colours';
+import { calculateTotalWeighting } from '../../utils/calculations';
+import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
+import { useTheme } from '../../theme/ThemeContext';
+import { Palette } from '../../constants/colours';
 import { spacing } from '../../constants/spacing';
+import { showError } from '../../utils/errors';
+import FormField from '../../components/FormField';
+import { validateAssessment, parseNumber, hasErrors, FieldErrors, AssessmentField } from '../../utils/validation';
 
-type Nav = NativeStackNavigationProp<MarksStackParamList, 'EditAssessment'>;
+type Nav = StackNavigationProp<MarksStackParamList, 'EditAssessment'>;
 type Route = RouteProp<MarksStackParamList, 'EditAssessment'>;
 
 export default function EditAssessmentScreen() {
+  const { colours } = useTheme();
+  const styles = useMemo(() => makeStyles(colours), [colours]);
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
   const { moduleId, assessmentId } = route.params;
@@ -31,6 +39,19 @@ export default function EditAssessmentScreen() {
   const [outOf, setOutOf] = useState('');
   const [weighting, setWeighting] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<FieldErrors<AssessmentField>>({});
+  // Weighting already used by this module's OTHER assessments
+  const [otherWeighting, setOtherWeighting] = useState(0);
+
+  const clearError = (field: AssessmentField) =>
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+
+  const previewMark = parseNumber(mark);
+  const previewOutOf = parseNumber(outOf);
   const [deleting, setDeleting] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
 
@@ -45,8 +66,9 @@ export default function EditAssessmentScreen() {
           setOutOf(found.outOf.toString());
           setWeighting(found.weighting.toString());
         }
+        setOtherWeighting(calculateTotalWeighting(assessments.filter((a) => a.id !== assessmentId)));
       } catch (e) {
-        Alert.alert('Error', 'Failed to load assessment.');
+        showError("Couldn't load assessment", e);
       } finally {
         setInitialLoading(false);
       }
@@ -55,38 +77,30 @@ export default function EditAssessmentScreen() {
   }, [moduleId, assessmentId]);
 
   const handleSave = async () => {
-    if (!name.trim()) {
-      Alert.alert('Error', 'Assessment name is required.');
-      return;
-    }
-    const markNum = parseFloat(mark);
-    const outOfNum = parseFloat(outOf);
-    const weightingNum = parseFloat(weighting);
-
-    if (isNaN(markNum) || isNaN(outOfNum) || isNaN(weightingNum)) {
-      Alert.alert('Error', 'Mark, Out Of and Weighting must be valid numbers.');
-      return;
-    }
-    if (markNum > outOfNum) {
-      Alert.alert('Error', 'Mark cannot exceed Out Of.');
-      return;
-    }
-    if (weightingNum <= 0 || weightingNum > 100) {
-      Alert.alert('Error', 'Weighting must be between 1 and 100.');
-      return;
-    }
+    const found = validateAssessment({ name, mark, outOf, weighting }, otherWeighting);
+    setErrors(found);
+    if (hasErrors(found)) return;
 
     setLoading(true);
     try {
+      // Re-check against the latest saved data before writing
+      const all = await fetchAssessments(moduleId);
+      const latest = calculateTotalWeighting(all.filter((a) => a.id !== assessmentId));
+      const recheck = validateAssessment({ name, mark, outOf, weighting }, latest);
+      if (hasErrors(recheck)) {
+        setOtherWeighting(latest);
+        setErrors(recheck);
+        return;
+      }
       await updateAssessment(moduleId, assessmentId, {
         name: name.trim(),
-        mark: markNum,
-        outOf: outOfNum,
-        weighting: weightingNum,
+        mark: parseNumber(mark)!,
+        outOf: parseNumber(outOf)!,
+        weighting: parseNumber(weighting)!,
       });
       navigation.goBack();
     } catch (e) {
-      Alert.alert('Error', 'Failed to update assessment.');
+      showError("Couldn't update assessment", e);
     } finally {
       setLoading(false);
     }
@@ -107,7 +121,7 @@ export default function EditAssessmentScreen() {
               await deleteAssessment(moduleId, assessmentId);
               navigation.goBack();
             } catch (e) {
-              Alert.alert('Error', 'Failed to delete assessment.');
+              showError("Couldn't delete assessment", e);
               setDeleting(false);
             }
           },
@@ -119,7 +133,7 @@ export default function EditAssessmentScreen() {
   if (initialLoading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colours.primary} />
+        <ActivityIndicator size="large" color={colours.accent} />
       </View>
     );
   }
@@ -129,71 +143,57 @@ export default function EditAssessmentScreen() {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>‹ Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Edit Assessment</Text>
-        <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
-          {deleting
-            ? <ActivityIndicator size="small" color={colours.danger} />
-            : <Text style={styles.deleteText}>Delete</Text>
-          }
-        </TouchableOpacity>
-      </View>
+      <ScreenHeader title="Edit Assessment" onBack={() => navigation.goBack()} right={<HeaderAction label="Delete" destructive loading={deleting} onPress={handleDelete} />} />
 
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.label}>Assessment Name *</Text>
-        <TextInput
-          style={styles.input}
+        <FormField
+          label="Assessment Name *"
           value={name}
-          onChangeText={setName}
+          onChangeText={(v) => { setName(v); clearError('name'); }}
           placeholder="e.g. Test 1"
-          placeholderTextColor={colours.grey4}
+          error={errors.name}
         />
 
         <View style={styles.row}>
           <View style={styles.rowItem}>
-            <Text style={styles.label}>Mark *</Text>
-            <TextInput
-              style={styles.input}
+            <FormField
+              label="Mark *"
               value={mark}
-              onChangeText={setMark}
+              onChangeText={(v) => { setMark(v); clearError('mark'); }}
               keyboardType="decimal-pad"
               placeholder="e.g. 74"
-              placeholderTextColor={colours.grey4}
+              error={errors.mark}
             />
           </View>
           <View style={styles.rowItem}>
-            <Text style={styles.label}>Out Of *</Text>
-            <TextInput
-              style={styles.input}
+            <FormField
+              label="Out Of *"
               value={outOf}
-              onChangeText={setOutOf}
+              onChangeText={(v) => { setOutOf(v); clearError('outOf'); clearError('mark'); }}
               keyboardType="decimal-pad"
               placeholder="e.g. 100"
-              placeholderTextColor={colours.grey4}
+              error={errors.outOf}
             />
           </View>
         </View>
 
-        <Text style={styles.label}>Weighting (%) *</Text>
-        <TextInput
-          style={styles.input}
+        <FormField
+          label="Weighting (%) *"
           value={weighting}
-          onChangeText={setWeighting}
+          onChangeText={(v) => { setWeighting(v); clearError('weighting'); }}
           keyboardType="decimal-pad"
           placeholder="e.g. 30"
-          placeholderTextColor={colours.grey4}
+          error={errors.weighting}
+          hint={`${Math.max(0, 100 - otherWeighting).toFixed(0)}% weighting left in this module`}
         />
 
-        {mark && outOf && !isNaN(parseFloat(mark)) && !isNaN(parseFloat(outOf)) && parseFloat(outOf) > 0 && (
+        {previewMark !== null && previewOutOf !== null && previewOutOf > 0 && (
           <View style={styles.previewStrip}>
             <Text style={styles.previewText}>
-              Score preview: {((parseFloat(mark) / parseFloat(outOf)) * 100).toFixed(1)}%
+              Score preview: {((previewMark / previewOutOf) * 100).toFixed(1)}%
             </Text>
           </View>
         )}
@@ -204,7 +204,7 @@ export default function EditAssessmentScreen() {
           disabled={loading}
         >
           {loading
-            ? <ActivityIndicator color={colours.white} />
+            ? <ActivityIndicator color={colours.onPrimary} />
             : <Text style={styles.btnPrimaryText}>Save Changes</Text>
           }
         </TouchableOpacity>
@@ -220,25 +220,9 @@ export default function EditAssessmentScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colours: Palette) => StyleSheet.create({
   flex: { flex: 1, backgroundColor: colours.background },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.screenPadding,
-    paddingTop: 56,
-    paddingBottom: 12,
-    backgroundColor: colours.white,
-    borderBottomWidth: 1,
-    borderBottomColor: colours.grey3,
-  },
-  backBtn: { width: 60 },
-  backText: { fontSize: 16, color: colours.primary, fontWeight: '500' },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: colours.text },
-  deleteBtn: { width: 60, alignItems: 'flex-end' },
-  deleteText: { fontSize: 15, color: colours.danger, fontWeight: '600' },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colours.background },
   content: { padding: spacing.screenPadding, paddingTop: 24 },
   label: {
     fontSize: 12,
@@ -249,7 +233,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   input: {
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
     borderWidth: 1.5,
     borderColor: colours.grey3,
     borderRadius: spacing.borderRadius,
@@ -266,7 +250,7 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 16,
   },
-  previewText: { fontSize: 13, color: colours.primary, fontWeight: '600' },
+  previewText: { fontSize: 13, color: colours.accent, fontWeight: '600' },
   btnPrimary: {
     backgroundColor: colours.primary,
     borderRadius: spacing.borderRadius,
@@ -274,7 +258,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  btnPrimaryText: { color: colours.white, fontSize: 15, fontWeight: '700' },
+  btnPrimaryText: { color: colours.onPrimary, fontSize: 15, fontWeight: '700' },
   btnSecondary: {
     alignItems: 'center',
     padding: 15,
@@ -282,7 +266,7 @@ const styles = StyleSheet.create({
     borderRadius: spacing.borderRadius,
     borderWidth: 1.5,
     borderColor: colours.grey3,
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
   },
   btnSecondaryText: { color: colours.grey5, fontSize: 15, fontWeight: '600' },
 });

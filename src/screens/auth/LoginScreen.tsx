@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,17 +11,20 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
 import { loginUser } from '../../services/auth';
-import { colours } from '../../constants/colours';
+import { useTheme } from '../../theme/ThemeContext';
+import { Palette } from '../../constants/colours';
 import { spacing } from '../../constants/spacing';
 
 type Props = {
-  navigation: NativeStackNavigationProp<AuthStackParamList, 'Login'>;
+  navigation: StackNavigationProp<AuthStackParamList, 'Login'>;
 };
 
 export default function LoginScreen({ navigation }: Props) {
+  const { colours } = useTheme();
+  const styles = useMemo(() => makeStyles(colours), [colours]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -81,7 +84,7 @@ export default function LoginScreen({ navigation }: Props) {
             disabled={loading}
           >
             {loading
-              ? <ActivityIndicator color={colours.white} />
+              ? <ActivityIndicator color={colours.onPrimary} />
               : <Text style={styles.btnPrimaryText}>Sign In</Text>
             }
           </TouchableOpacity>
@@ -98,16 +101,16 @@ export default function LoginScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colours: Palette) => StyleSheet.create({
   flex: { flex: 1, backgroundColor: colours.background },
   container: { flexGrow: 1, justifyContent: 'center', padding: spacing.screenPadding },
   header: { alignItems: 'center', marginBottom: 40 },
-  appName: { fontSize: 36, fontWeight: '800', color: colours.primary, letterSpacing: -1 },
+  appName: { fontSize: 36, fontWeight: '800', color: colours.accent, letterSpacing: -1 },
   tagline: { fontSize: 14, color: colours.textSoft, marginTop: 6 },
   form: { gap: 8 },
   label: { fontSize: 12, fontWeight: '700', color: colours.textSoft, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   input: {
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
     borderWidth: 1.5,
     borderColor: colours.grey3,
     borderRadius: spacing.borderRadius,
@@ -123,7 +126,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  btnPrimaryText: { color: colours.white, fontSize: 15, fontWeight: '700' },
+  btnPrimaryText: { color: colours.onPrimary, fontSize: 15, fontWeight: '700' },
   btnSecondary: { alignItems: 'center', padding: 12, marginTop: 4 },
-  btnSecondaryText: { color: colours.primary, fontSize: 14, fontWeight: '500' },
+  btnSecondaryText: { color: colours.accent, fontSize: 14, fontWeight: '500' },
 });

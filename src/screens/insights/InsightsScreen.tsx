@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,9 +6,10 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  RefreshControl,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import AppIcon from '../../components/AppIcon';
 import { fetchModules } from '../../services/modules';
 import { fetchAssessments } from '../../services/assessments';
 import { fetchGoal } from '../../services/goals';
@@ -19,10 +20,15 @@ import {
   calculateRequiredScore,
   calculateRemainingWeighting,
   calculateTotalWeighting,
+  calculateOverallAverage,
   FeasibilityStatus,
 } from '../../utils/calculations';
-import { colours } from '../../constants/colours';
+import ScreenHeader from '../../components/ScreenHeader';
+import { useTheme } from '../../theme/ThemeContext';
+import { Palette } from '../../constants/colours';
 import { spacing } from '../../constants/spacing';
+import { useFocusLoad } from '../../hooks/useFocusLoad';
+import { useTabPressReset } from '../../hooks/useTabPressReset';
 import { Module, Assessment, Goal, Deadline } from '../../types/index';
 
 interface ModuleData {
@@ -32,12 +38,12 @@ interface ModuleData {
   average: number;
 }
 
-const feasibilityConfig = (status: FeasibilityStatus) => {
+const feasibilityConfig = (status: FeasibilityStatus, colours: Palette) => {
   switch (status) {
     case 'Reached': return { color: colours.success, bg: colours.successPale };
     case 'On Track': return { color: colours.success, bg: colours.successPale };
     case 'At Risk': return { color: colours.warning, bg: colours.warningPale };
-    case 'Unlikely': return { color: colours.orange, bg: '#FDEBD0' };
+    case 'Unlikely': return { color: colours.orange, bg: colours.orangePale };
     case 'Impossible': return { color: colours.danger, bg: colours.dangerPale };
     default: return { color: colours.grey4, bg: colours.grey2 };
   }
@@ -50,41 +56,35 @@ const getDeadlineDate = (ts: any): Date => {
 };
 
 export default function InsightsScreen() {
+  const { colours } = useTheme();
+  const styles = useMemo(() => makeStyles(colours), [colours]);
   const [moduleData, setModuleData] = useState<ModuleData[]>([]);
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useFocusEffect(
-    useCallback(() => {
-      const load = async () => {
-        setLoading(true);
-        try {
-          const modules = await fetchModules();
-          const data = await Promise.all(
-            modules.map(async (m) => {
-              const assessments = await fetchAssessments(m.id);
-              const goal = await fetchGoal(m.id);
-              const average = calculateWeightedAverage(assessments);
-              return { module: m, assessments, goal, average };
-            })
-          );
-          const dl = await fetchDeadlines();
-          setModuleData(data);
-          setDeadlines(dl);
-        } catch (e) {
-          Alert.alert('Error', 'Failed to load insights.');
-        } finally {
-          setLoading(false);
-        }
-      };
-      load();
-    }, [])
-  );
+  // Spinner on first visit only; quiet refresh when you come back; pull to refresh
+  const listRef = useRef<any>(null);
+  const { loading, refreshing, onRefresh, refreshQuietly } = useFocusLoad(async () => {
+    const modules = await fetchModules();
+    const data = await Promise.all(
+      modules.map(async (m) => {
+        const assessments = await fetchAssessments(m.id);
+        const goal = await fetchGoal(m.id);
+        const average = calculateWeightedAverage(assessments);
+        return { module: m, assessments, goal, average };
+      })
+    );
+    const dl = await fetchDeadlines();
+    setModuleData(data);
+    setDeadlines(dl);
+  }, "Couldn't load insights");
+
+  // Tap the tab icon → back to the top (and refresh if already on this tab)
+  useTabPressReset(listRef, refreshQuietly);
 
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colours.primary} />
+        <ActivityIndicator size="large" color={colours.accent} />
       </View>
     );
   }
@@ -92,20 +92,23 @@ export default function InsightsScreen() {
   if (moduleData.length === 0) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.appName}>Insights</Text>
-        </View>
-        <View style={styles.empty}>
-          <Ionicons name="bulb-outline" size={48} color={colours.grey3} />
+        <ScreenHeader title="Insights" />
+        <ScrollView
+          ref={listRef}
+          contentContainerStyle={styles.empty}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colours.accent} colors={[colours.accent]} />}
+        >
+          <AppIcon name="bulb" size={64} />
           <Text style={styles.emptyTitle}>No data yet</Text>
           <Text style={styles.emptyText}>Add modules and assessments to see insights</Text>
-        </View>
+        </ScrollView>
       </View>
     );
   }
 
   // ── Calculations ──────────────────────────────────────────
-  const overallAverage = moduleData.reduce((sum, m) => sum + m.average, 0) / moduleData.length;
+  // Only modules with marks count — null means nothing recorded yet
+  const overallAverage = calculateOverallAverage(moduleData);
   const modulesWithGoals = moduleData.filter((m) => m.goal !== null);
   const goalsSet = modulesWithGoals.length;
 
@@ -124,15 +127,24 @@ export default function InsightsScreen() {
   }).sort((a, b) => getDeadlineDate(a.date).getTime() - getDeadlineDate(b.date).getTime());
   const completedDeadlines = deadlines.filter((d) => d.isDone);
 
-  // Module ranking — highest to lowest
-  const ranked = [...moduleData].sort((a, b) => b.average - a.average);
+  // Module ranking — highest to lowest; modules with no marks go to the bottom
+  const ranked = [...moduleData].sort((a, b) => {
+    const aHas = a.assessments.length > 0;
+    const bHas = b.assessments.length > 0;
+    if (aHas !== bHas) return aHas ? -1 : 1;
+    return b.average - a.average;
+  });
 
-  // Focus module — module furthest below its goal
-  const focusModule = modulesWithGoals.reduce<ModuleData | null>((worst, m) => {
-    const gap = (m.goal?.targetPercentage ?? 0) - m.average;
-    const worstGap = worst ? (worst.goal?.targetPercentage ?? 0) - worst.average : -Infinity;
-    return gap > worstGap ? m : worst;
-  }, null);
+  // Focus module — the module furthest BELOW its goal.
+  // Only modules that have marks and are actually behind qualify,
+  // so no banner shows when every module is at or above its goal.
+  const focusModule = modulesWithGoals
+    .filter((m) => m.assessments.length > 0 && (m.goal?.targetPercentage ?? 0) - m.average > 0)
+    .reduce<ModuleData | null>((worst, m) => {
+      const gap = (m.goal?.targetPercentage ?? 0) - m.average;
+      const worstGap = worst ? (worst.goal?.targetPercentage ?? 0) - worst.average : -Infinity;
+      return gap > worstGap ? m : worst;
+    }, null);
 
   // Weighting flags — modules where total weighting != 100%
   const weightingFlags = moduleData.filter((m) => {
@@ -144,18 +156,23 @@ export default function InsightsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.appName}>Insights</Text>
-      </View>
+      <ScreenHeader title="Insights" />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={listRef}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colours.accent} colors={[colours.accent]} />}
+      >
 
         {/* ── Section 1: Overall Summary ── */}
         <View style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>Overview</Text>
           <View style={styles.statsGrid}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{overallAverage.toFixed(1)}%</Text>
+              <Text style={styles.statValue}>
+                {overallAverage !== null ? `${overallAverage.toFixed(1)}%` : '—'}
+              </Text>
               <Text style={styles.statLabel}>Overall Average</Text>
             </View>
             <View style={styles.statItem}>
@@ -177,9 +194,13 @@ export default function InsightsScreen() {
 
         {/* ── Section 2: Module Ranking ── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📊 Module Ranking</Text>
+          <View style={styles.sectionTitleRow}>
+            <AppIcon name="insights" size={20} />
+            <Text style={styles.sectionTitle}>Module Ranking</Text>
+          </View>
           {ranked.map((item, index) => {
-            const isTop = index === 0;
+            const hasMarks = item.assessments.length > 0;
+            const isTop = index === 0 && hasMarks;
             const avgColor = item.average >= 75
               ? colours.success
               : item.average >= 50
@@ -189,7 +210,7 @@ export default function InsightsScreen() {
             return (
               <View key={item.module.id} style={styles.rankRow}>
                 <View style={[styles.rankNum, isTop && styles.rankNumGold]}>
-                  <Text style={[styles.rankNumText, isTop && { color: '#B45309' }]}>
+                  <Text style={[styles.rankNumText, isTop && { color: colours.goldText }]}>
                     {index + 1}
                   </Text>
                 </View>
@@ -199,8 +220,8 @@ export default function InsightsScreen() {
                     <Text style={styles.rankCode}>{item.module.code}</Text>
                   ) : null}
                 </View>
-                <Text style={[styles.rankAvg, { color: avgColor }]}>
-                  {item.average.toFixed(1)}%
+                <Text style={[styles.rankAvg, { color: hasMarks ? avgColor : colours.grey4 }]}>
+                  {hasMarks ? `${item.average.toFixed(1)}%` : '—'}
                 </Text>
               </View>
             );
@@ -219,7 +240,10 @@ export default function InsightsScreen() {
         {/* ── Section 3: Goal Summary ── */}
         {goalsSet > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>🎯 Goal Summary</Text>
+            <View style={styles.sectionTitleRow}>
+            <AppIcon name="goals" size={20} />
+            <Text style={styles.sectionTitle}>Goal Summary</Text>
+          </View>
             {modulesWithGoals.map((item) => {
               const feasibility = calculateFeasibility(
                 item.assessments,
@@ -230,7 +254,7 @@ export default function InsightsScreen() {
                 item.goal?.targetPercentage ?? 0
               );
               const remaining = calculateRemainingWeighting(item.assessments);
-              const { color, bg } = feasibilityConfig(feasibility);
+              const { color, bg } = feasibilityConfig(feasibility, colours);
 
               return (
                 <View key={item.module.id} style={styles.goalRow}>
@@ -238,7 +262,7 @@ export default function InsightsScreen() {
                     <Text style={styles.goalModuleName}>{item.module.name}</Text>
                     <Text style={styles.goalDetail}>
                       {item.average.toFixed(1)}% → {item.goal?.targetPercentage}%
-                      {required !== null && remaining > 0
+                      {required !== null && remaining > 0 && required > 0
                         ? ` · Need ${required.toFixed(1)}% on remaining`
                         : ''}
                     </Text>
@@ -254,7 +278,10 @@ export default function InsightsScreen() {
 
         {/* ── Section 4: Weighting Summary ── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>⚖️ Weighting Summary</Text>
+          <View style={styles.sectionTitleRow}>
+            <AppIcon name="document" size={20} />
+            <Text style={styles.sectionTitle}>Weighting Summary</Text>
+          </View>
           {moduleData.map((item) => {
             const total = calculateTotalWeighting(item.assessments);
             const remaining = calculateRemainingWeighting(item.assessments);
@@ -298,7 +325,10 @@ export default function InsightsScreen() {
 
         {/* ── Section 5: Deadline Summary ── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📅 Deadline Summary</Text>
+          <View style={styles.sectionTitleRow}>
+            <AppIcon name="deadlines" size={20} />
+            <Text style={styles.sectionTitle}>Deadline Summary</Text>
+          </View>
 
           <View style={styles.deadlineTiles}>
             <View style={[styles.deadlineTile, { backgroundColor: colours.dangerPale }]}>
@@ -308,10 +338,10 @@ export default function InsightsScreen() {
               <Text style={[styles.tileLabel, { color: colours.danger }]}>Overdue</Text>
             </View>
             <View style={[styles.deadlineTile, { backgroundColor: colours.primaryPale }]}>
-              <Text style={[styles.tileCount, { color: colours.primary }]}>
+              <Text style={[styles.tileCount, { color: colours.accent }]}>
                 {upcomingDeadlines.length}
               </Text>
-              <Text style={[styles.tileLabel, { color: colours.primary }]}>Upcoming</Text>
+              <Text style={[styles.tileLabel, { color: colours.accent }]}>Upcoming</Text>
             </View>
             <View style={[styles.deadlineTile, { backgroundColor: colours.successPale }]}>
               <Text style={[styles.tileCount, { color: colours.success }]}>
@@ -323,7 +353,7 @@ export default function InsightsScreen() {
 
           {nextDeadline && (
             <View style={styles.nextDeadline}>
-              <Ionicons name="time-outline" size={14} color={colours.primary} />
+              <Ionicons name="time-outline" size={14} color={colours.accent} />
               <Text style={styles.nextDeadlineText}>
                 Next: <Text style={{ fontWeight: '700' }}>{nextDeadline.assessmentName}</Text>
                 {' '}({nextDeadline.moduleName}) · {getDeadlineDate(nextDeadline.date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -346,22 +376,13 @@ export default function InsightsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colours: Palette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colours.background },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: {
-    paddingHorizontal: spacing.screenPadding,
-    paddingTop: 56,
-    paddingBottom: 12,
-    backgroundColor: colours.white,
-    borderBottomWidth: 1,
-    borderBottomColor: colours.grey3,
-  },
-  appName: { fontSize: 22, fontWeight: '800', color: colours.primary, letterSpacing: -0.5 },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colours.background },
+  empty: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', gap: 8, padding: spacing.screenPadding },
   emptyTitle: { fontSize: 17, fontWeight: '700', color: colours.grey5 },
   emptyText: { fontSize: 14, color: colours.grey4, textAlign: 'center', paddingHorizontal: 40 },
-  scroll: { padding: spacing.screenPadding, paddingBottom: 40 },
+  scroll: { padding: spacing.screenPadding, paddingBottom: 16 },
 
   // Summary card
   summaryCard: {
@@ -387,7 +408,7 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 28,
     fontWeight: '800',
-    color: colours.white,
+    color: colours.onPrimary,
     letterSpacing: -0.5,
     lineHeight: 32,
   },
@@ -399,20 +420,20 @@ const styles = StyleSheet.create({
 
   // Sections
   section: {
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
     borderRadius: spacing.borderRadius,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1.5,
     borderColor: colours.grey3,
   },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   sectionTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: colours.primary,
+    color: colours.accent,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
-    marginBottom: 12,
   },
 
   // Ranking
@@ -432,7 +453,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rankNumGold: { backgroundColor: '#FEF3C7' },
+  rankNumGold: { backgroundColor: colours.goldBg },
   rankNumText: { fontSize: 12, fontWeight: '700', color: colours.grey5 },
   rankInfo: { flex: 1 },
   rankName: { fontSize: 14, fontWeight: '600', color: colours.text },
@@ -508,7 +529,7 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 8,
   },
-  nextDeadlineText: { flex: 1, fontSize: 12, color: colours.primary, lineHeight: 18 },
+  nextDeadlineText: { flex: 1, fontSize: 12, color: colours.accent, lineHeight: 18 },
   overdueAlert: {
     flexDirection: 'row',
     alignItems: 'flex-start',

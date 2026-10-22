@@ -6,9 +6,9 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { UserProfile } from '../types/index';
+import { userPath } from './user';
 
-const TEMP_USER_ID = 'temp-user-123';
-const profilePath = () => `users/${TEMP_USER_ID}`;
+const profilePath = () => userPath();
 
 export const fetchProfile = async (): Promise<UserProfile | null> => {
   const snap = await getDoc(doc(db, profilePath()));

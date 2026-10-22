@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,22 +12,30 @@ import {
   Alert,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { GoalsStackParamList } from '../../navigation/GoalsNavigator';
 import { fetchGoal, setGoal, deleteGoal } from '../../services/goals';
-import { colours } from '../../constants/colours';
+import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
+import { useTheme } from '../../theme/ThemeContext';
+import { Palette } from '../../constants/colours';
 import { spacing } from '../../constants/spacing';
+import { showError } from '../../utils/errors';
+import FormField from '../../components/FormField';
+import { validateGoal, parseNumber, hasErrors, FieldErrors } from '../../utils/validation';
 
-type Nav = NativeStackNavigationProp<GoalsStackParamList, 'EditGoal'>;
+type Nav = StackNavigationProp<GoalsStackParamList, 'EditGoal'>;
 type Route = RouteProp<GoalsStackParamList, 'EditGoal'>;
 
 export default function EditGoalScreen() {
+  const { colours } = useTheme();
+  const styles = useMemo(() => makeStyles(colours), [colours]);
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
   const { moduleId, moduleName } = route.params;
 
   const [target, setTarget] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<FieldErrors<'target'>>({});
   const [deleting, setDeleting] = useState(false);
   const [hasExisting, setHasExisting] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -41,7 +49,7 @@ export default function EditGoalScreen() {
           setHasExisting(true);
         }
       } catch (e) {
-        Alert.alert('Error', 'Failed to load goal.');
+        showError("Couldn't load goal", e);
       } finally {
         setInitialLoading(false);
       }
@@ -50,17 +58,17 @@ export default function EditGoalScreen() {
   }, [moduleId]);
 
   const handleSave = async () => {
-    const targetNum = parseFloat(target);
-    if (isNaN(targetNum) || targetNum <= 0 || targetNum > 100) {
-      Alert.alert('Error', 'Please enter a valid target between 1 and 100.');
-      return;
-    }
+    const found = validateGoal(target);
+    setErrors(found);
+    if (hasErrors(found)) return;
+    const targetNum = parseNumber(target)!;
+
     setLoading(true);
     try {
       await setGoal(moduleId, targetNum);
       navigation.goBack();
     } catch (e) {
-      Alert.alert('Error', 'Failed to save goal.');
+      showError("Couldn't save goal", e);
     } finally {
       setLoading(false);
     }
@@ -81,7 +89,7 @@ export default function EditGoalScreen() {
               await deleteGoal(moduleId);
               navigation.goBack();
             } catch (e) {
-              Alert.alert('Error', 'Failed to remove goal.');
+              showError("Couldn't remove goal", e);
               setDeleting(false);
             }
           },
@@ -93,7 +101,7 @@ export default function EditGoalScreen() {
   if (initialLoading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colours.primary} />
+        <ActivityIndicator size="large" color={colours.accent} />
       </View>
     );
   }
@@ -103,22 +111,11 @@ export default function EditGoalScreen() {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>‹ Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>{moduleName}</Text>
-        {hasExisting ? (
-          <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
-            {deleting
-              ? <ActivityIndicator size="small" color={colours.danger} />
-              : <Text style={styles.deleteText}>Remove</Text>
-            }
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 60 }} />
-        )}
-      </View>
+      <ScreenHeader
+        title={moduleName}
+        onBack={() => navigation.goBack()}
+        right={hasExisting ? <HeaderAction label="Remove" destructive loading={deleting} onPress={handleDelete} /> : null}
+      />
 
       <ScrollView
         contentContainerStyle={styles.content}
@@ -128,17 +125,16 @@ export default function EditGoalScreen() {
           {hasExisting ? 'Update your target percentage for this module.' : 'Set a target percentage for this module.'}
         </Text>
 
-        <Text style={styles.label}>Target Percentage *</Text>
-        <TextInput
-          style={styles.input}
+        <FormField
+          label="Target Percentage *"
           value={target}
-          onChangeText={setTarget}
+          onChangeText={(v) => { setTarget(v); setErrors({}); }}
           keyboardType="decimal-pad"
           placeholder="e.g. 75"
-          placeholderTextColor={colours.grey4}
+          error={errors.target}
+          hint="Enter a value between 1 and 100"
+          containerStyle={{ marginBottom: 24 }}
         />
-
-        <Text style={styles.hint}>Enter a value between 1 and 100.</Text>
 
         <TouchableOpacity
           style={styles.btnPrimary}
@@ -146,7 +142,7 @@ export default function EditGoalScreen() {
           disabled={loading}
         >
           {loading
-            ? <ActivityIndicator color={colours.white} />
+            ? <ActivityIndicator color={colours.onPrimary} />
             : <Text style={styles.btnPrimaryText}>
                 {hasExisting ? 'Update Goal' : 'Set Goal'}
               </Text>
@@ -164,25 +160,9 @@ export default function EditGoalScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colours: Palette) => StyleSheet.create({
   flex: { flex: 1, backgroundColor: colours.background },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.screenPadding,
-    paddingTop: 56,
-    paddingBottom: 12,
-    backgroundColor: colours.white,
-    borderBottomWidth: 1,
-    borderBottomColor: colours.grey3,
-  },
-  backBtn: { width: 60 },
-  backText: { fontSize: 16, color: colours.primary, fontWeight: '500' },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: colours.text, flex: 1, textAlign: 'center' },
-  deleteBtn: { width: 60, alignItems: 'flex-end' },
-  deleteText: { fontSize: 15, color: colours.danger, fontWeight: '600' },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colours.background },
   content: { padding: spacing.screenPadding, paddingTop: 24 },
   subtitle: { fontSize: 14, color: colours.textSoft, marginBottom: 24, lineHeight: 20 },
   label: {
@@ -194,7 +174,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   input: {
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
     borderWidth: 1.5,
     borderColor: colours.grey3,
     borderRadius: spacing.borderRadius,
@@ -211,7 +191,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  btnPrimaryText: { color: colours.white, fontSize: 15, fontWeight: '700' },
+  btnPrimaryText: { color: colours.onPrimary, fontSize: 15, fontWeight: '700' },
   btnSecondary: {
     alignItems: 'center',
     padding: 15,
@@ -219,7 +199,7 @@ const styles = StyleSheet.create({
     borderRadius: spacing.borderRadius,
     borderWidth: 1.5,
     borderColor: colours.grey3,
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
   },
   btnSecondaryText: { color: colours.grey5, fontSize: 15, fontWeight: '600' },
 });

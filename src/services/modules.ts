@@ -1,19 +1,19 @@
 import {
   collection,
   addDoc,
-  updateDoc,
-  deleteDoc,
   doc,
   getDocs,
+  query,
+  where,
+  writeBatch,
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { Module } from '../types/index';
+import { deadlinesPath } from './deadlines';
+import { userPath } from './user';
 
-const TEMP_USER_ID = 'temp-user-123';
-
-export const getModulesPath = () =>
-  `users/${TEMP_USER_ID}/modules`;
+export const getModulesPath = () => `${userPath()}/modules`;
 
 export const fetchModules = async (): Promise<Module[]> => {
   const snap = await getDocs(collection(db, getModulesPath()));
@@ -35,16 +35,48 @@ export const addModule = async (
   return ref.id;
 };
 
+// Deadlines store a copy of the module name, so a rename must update them too
 export const updateModule = async (
   moduleId: string,
   updates: Partial<Pick<Module, 'name' | 'code' | 'level'>>
 ): Promise<void> => {
-  await updateDoc(doc(db, getModulesPath(), moduleId), {
+  const batch = writeBatch(db);
+  batch.update(doc(db, getModulesPath(), moduleId), {
     ...updates,
     updatedAt: Timestamp.now(),
   });
+
+  if (updates.name !== undefined) {
+    const linked = await getDocs(
+      query(collection(db, deadlinesPath()), where('moduleId', '==', moduleId))
+    );
+    linked.forEach((d) =>
+      batch.update(d.ref, { moduleName: updates.name, updatedAt: Timestamp.now() })
+    );
+  }
+
+  await batch.commit();
 };
 
+// Firestore does NOT delete sub-collections when a document is deleted,
+// so remove the module's assessments, goal and deadlines explicitly.
+// All in one batch — either everything is deleted or nothing is.
 export const deleteModule = async (moduleId: string): Promise<void> => {
-  await deleteDoc(doc(db, getModulesPath(), moduleId));
+  const batch = writeBatch(db);
+
+  const assessments = await getDocs(
+    collection(db, getModulesPath(), moduleId, 'assessments')
+  );
+  assessments.forEach((d) => batch.delete(d.ref));
+
+  batch.delete(doc(db, getModulesPath(), moduleId, 'goalData', 'target'));
+
+  const linkedDeadlines = await getDocs(
+    query(collection(db, deadlinesPath()), where('moduleId', '==', moduleId))
+  );
+  linkedDeadlines.forEach((d) => batch.delete(d.ref));
+
+  batch.delete(doc(db, getModulesPath(), moduleId));
+
+  await batch.commit();
 };

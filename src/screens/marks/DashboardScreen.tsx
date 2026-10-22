@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,12 +7,13 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  RefreshControl,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
+import AppIcon from '../../components/AppIcon';
 import { MarksStackParamList } from '../../navigation/MarksNavigator';
-import { useModulesStore } from '../../store/useModulesStore';
 import { fetchModules } from '../../services/modules';
 import { fetchAssessments } from '../../services/assessments';
 import { fetchGoal } from '../../services/goals';
@@ -20,20 +21,26 @@ import {
   calculateWeightedAverage,
   calculateFeasibility,
   calculateDirection,
+  calculateOverallAverage,
+  meetsTarget,
 } from '../../utils/calculations';
-import { colours } from '../../constants/colours';
+import ScreenHeader from '../../components/ScreenHeader';
+import { useTheme } from '../../theme/ThemeContext';
+import { Palette } from '../../constants/colours';
 import { spacing } from '../../constants/spacing';
+import { useFocusLoad } from '../../hooks/useFocusLoad';
+import { useTabPressReset } from '../../hooks/useTabPressReset';
 import { Goal } from '../../types/index';
 
-type Nav = NativeStackNavigationProp<MarksStackParamList, 'Dashboard'>;
+type Nav = StackNavigationProp<MarksStackParamList, 'Dashboard'>;
 
-const directionIcon = (d: string) => {
+const directionIcon = (d: string, colours: Palette) => {
   if (d === 'up') return { icon: 'trending-up', color: colours.success };
   if (d === 'down') return { icon: 'trending-down', color: colours.danger };
   return { icon: 'remove', color: colours.grey4 };
 };
 
-const feasibilityColor = (status: string) => {
+const feasibilityColor = (status: string, colours: Palette) => {
   if (status === 'Reached') return colours.success;
   if (status === 'On Track') return colours.success;
   if (status === 'At Risk') return colours.warning;
@@ -54,40 +61,30 @@ interface ModuleData {
 }
 
 export default function DashboardScreen() {
+  const { colours } = useTheme();
+  const styles = useMemo(() => makeStyles(colours), [colours]);
   const navigation = useNavigation<Nav>();
-  const { setModules } = useModulesStore();
   const [modules, setLocalModules] = useState<ModuleData[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useFocusEffect(
-    useCallback(() => {
-      const loadData = async () => {
-        setLoading(true);
-        try {
-          const mods = await fetchModules();
-          const modsWithData = await Promise.all(
-            mods.map(async (m) => {
-              const assessments = await fetchAssessments(m.id);
-              const goal = await fetchGoal(m.id);
-              return { ...m, assessments, goal };
-            })
-          );
-          setLocalModules(modsWithData);
-          setModules(modsWithData);
-        } catch (e) {
-          Alert.alert('Error', 'Failed to load modules.');
-        } finally {
-          setLoading(false);
-        }
-      };
-      loadData();
-    }, [])
-  );
+  // Spinner on first visit only; quiet refresh when you come back; pull to refresh
+  const listRef = useRef<any>(null);
+  const { loading, refreshing, onRefresh, refreshQuietly } = useFocusLoad(async () => {
+    const mods = await fetchModules();
+    const modsWithData = await Promise.all(
+      mods.map(async (m) => {
+        const assessments = await fetchAssessments(m.id);
+        const goal = await fetchGoal(m.id);
+        return { ...m, assessments, goal };
+      })
+    );
+    setLocalModules(modsWithData);
+  }, "Couldn't load modules");
 
-  const moduleAverages = modules.map((m) => calculateWeightedAverage(m.assessments));
-  const overallAverage = moduleAverages.length > 0
-    ? moduleAverages.reduce((sum, avg) => sum + avg, 0) / moduleAverages.length
-    : 0;
+  // Tap the tab icon → back to the top (and refresh if already on this tab)
+  useTabPressReset(listRef, refreshQuietly);
+
+  // Only modules with marks count — null means nothing recorded yet
+  const overallAverage = calculateOverallAverage(modules);
 
   const modulesWithGoals = modules.filter((m) => m.goal !== null);
   const overallGoal = modulesWithGoals.length > 0
@@ -97,7 +94,7 @@ export default function DashboardScreen() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colours.primary} />
+        <ActivityIndicator size="large" color={colours.accent} />
       </View>
     );
   }
@@ -105,62 +102,77 @@ export default function DashboardScreen() {
   return (
     <View style={styles.container}>
       {/* Fixed Header */}
-      <View style={styles.header}>
-        <Text style={styles.appName}>StudyTrack</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
-          <Ionicons name="person-circle-outline" size={32} color={colours.primary} />
-        </TouchableOpacity>
-      </View>
+      <ScreenHeader
+        title="StudyTrack"
+        right={
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Profile')}
+            accessibilityRole="button"
+            accessibilityLabel="Profile"
+          >
+            <Ionicons name="person-circle-outline" size={32} color={colours.accent} />
+          </TouchableOpacity>
+        }
+      />
 
       {/* Fixed Overall Card — does not scroll */}
       <View style={styles.overallCard}>
         <View style={styles.overallLeft}>
           <Text style={styles.overallLabel}>Overall Average</Text>
-          <Text style={styles.overallPercent}>{overallAverage.toFixed(1)}%</Text>
+          <Text style={styles.overallPercent}>
+            {overallAverage !== null ? `${overallAverage.toFixed(1)}%` : '—'}
+          </Text>
           <View style={styles.overallBarTrack}>
-            <View style={[styles.overallBarFill, { width: `${Math.min(overallAverage, 100)}%` }]} />
+            <View style={[styles.overallBarFill, { width: `${Math.min(overallAverage ?? 0, 100)}%` }]} />
           </View>
         </View>
-        {overallGoal !== null && (
+        {overallGoal !== null && overallAverage !== null && (
           <View style={styles.overallRight}>
             <Text style={styles.goalLabel}>Avg Goal</Text>
             <Text style={styles.goalValue}>{overallGoal.toFixed(1)}%</Text>
             <Text style={[
               styles.goalStatus,
-              { color: overallAverage >= overallGoal ? colours.success : colours.warning }
+              { color: meetsTarget(overallAverage, overallGoal) ? colours.success : colours.warning }
             ]}>
-              {overallAverage >= overallGoal ? '↑ On track' : '↓ Below'}
+              {meetsTarget(overallAverage, overallGoal) ? '↑ On track' : '↓ Below'}
             </Text>
           </View>
         )}
       </View>
 
-      {/* Scrollable Module List */}
-      <FlatList
-        data={modules}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        ListHeaderComponent={
+      {/* Fixed module count — sits under the card and does not scroll */}
+      {modules.length > 0 && (
+        <View style={styles.countBar}>
           <Text style={styles.sectionLabel}>
             {modules.length} module{modules.length !== 1 ? 's' : ''} tracked
           </Text>
-        }
+        </View>
+      )}
+
+      {/* Scrollable Module List — only the cards move */}
+      <FlatList
+        ref={listRef}
+        data={modules}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.list}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colours.accent} colors={[colours.accent]} />}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Ionicons name="book-outline" size={48} color={colours.grey3} />
+            <AppIcon name="marks" size={64} />
             <Text style={styles.emptyTitle}>No modules yet</Text>
             <Text style={styles.emptyText}>Tap + to add your first module</Text>
           </View>
         }
         renderItem={({ item }) => {
           const avg = calculateWeightedAverage(item.assessments);
+          const hasMarks = item.assessments.length > 0;
           const direction = calculateDirection(item.assessments);
           const feasibility = calculateFeasibility(
             item.assessments,
             item.goal?.targetPercentage ?? null
           );
-          const { icon, color } = directionIcon(direction);
-          const barColor = feasibilityColor(feasibility);
+          const { icon, color } = directionIcon(direction, colours);
+          const barColor = feasibilityColor(feasibility, colours);
 
           return (
             <TouchableOpacity
@@ -180,7 +192,9 @@ export default function DashboardScreen() {
                 </Text>
               </View>
               <View style={styles.moduleRight}>
-                <Text style={[styles.moduleAvg, { color: barColor }]}>{avg.toFixed(1)}%</Text>
+                <Text style={[styles.moduleAvg, { color: hasMarks ? barColor : colours.grey4 }]}>
+                  {hasMarks ? `${avg.toFixed(1)}%` : '—'}
+                </Text>
                 <Ionicons name={icon as any} size={18} color={color} />
               </View>
             </TouchableOpacity>
@@ -193,27 +207,15 @@ export default function DashboardScreen() {
         style={styles.fab}
         onPress={() => navigation.navigate('AddModule')}
       >
-        <Ionicons name="add" size={28} color={colours.white} />
+        <Ionicons name="add" size={28} color={colours.onPrimary} />
       </TouchableOpacity>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colours: Palette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colours.background },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.screenPadding,
-    paddingTop: 56,
-    paddingBottom: 12,
-    backgroundColor: colours.white,
-    borderBottomWidth: 1,
-    borderBottomColor: colours.grey3,
-  },
-  appName: { fontSize: 22, fontWeight: '800', color: colours.primary, letterSpacing: -0.5 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colours.background },
   overallCard: {
     backgroundColor: colours.primary,
     paddingHorizontal: spacing.screenPadding,
@@ -233,7 +235,7 @@ const styles = StyleSheet.create({
   overallPercent: {
     fontSize: 44,
     fontWeight: '800',
-    color: colours.white,
+    color: colours.onPrimary,
     letterSpacing: -1.5,
     lineHeight: 52,
   },
@@ -264,7 +266,7 @@ const styles = StyleSheet.create({
   goalValue: {
     fontSize: 24,
     fontWeight: '800',
-    color: colours.white,
+    color: colours.onPrimary,
     letterSpacing: -0.5,
   },
   goalStatus: {
@@ -278,11 +280,17 @@ const styles = StyleSheet.create({
     color: colours.grey5,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
-    marginBottom: 12,
   },
-  list: { padding: spacing.screenPadding, paddingBottom: 100 },
+  countBar: {
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 16,
+    paddingBottom: 10,
+    backgroundColor: colours.background,
+  },
+  // Bottom space = just enough for the last card to clear the + button
+  list: { paddingHorizontal: spacing.screenPadding, paddingTop: 2, paddingBottom: 72 },
   moduleCard: {
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
     borderRadius: spacing.borderRadius,
     padding: 14,
     marginBottom: 10,
@@ -312,8 +320,8 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 14, color: colours.grey4 },
   fab: {
     position: 'absolute',
-    bottom: 24,
-    right: 24,
+    bottom: 16,
+    right: 20,
     width: 56,
     height: 56,
     borderRadius: 28,

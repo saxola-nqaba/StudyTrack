@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,17 +12,24 @@ import {
   Alert,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { MarksStackParamList } from '../../navigation/MarksNavigator';
 import { addAssessment, fetchAssessments } from '../../services/assessments';
 import { calculateTotalWeighting } from '../../utils/calculations';
-import { colours } from '../../constants/colours';
+import ScreenHeader from '../../components/ScreenHeader';
+import { useTheme } from '../../theme/ThemeContext';
+import { Palette } from '../../constants/colours';
 import { spacing } from '../../constants/spacing';
+import { showError } from '../../utils/errors';
+import FormField from '../../components/FormField';
+import { validateAssessment, parseNumber, hasErrors, FieldErrors, AssessmentField } from '../../utils/validation';
 
-type Nav = NativeStackNavigationProp<MarksStackParamList, 'AddAssessment'>;
+type Nav = StackNavigationProp<MarksStackParamList, 'AddAssessment'>;
 type Route = RouteProp<MarksStackParamList, 'AddAssessment'>;
 
 export default function AddAssessmentScreen() {
+  const { colours } = useTheme();
+  const styles = useMemo(() => makeStyles(colours), [colours]);
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
   const { moduleId } = route.params;
@@ -32,49 +39,46 @@ export default function AddAssessmentScreen() {
   const [outOf, setOutOf] = useState('');
   const [weighting, setWeighting] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<FieldErrors<AssessmentField>>({});
+  // Weighting already used by this module's OTHER assessments
+  const [otherWeighting, setOtherWeighting] = useState(0);
+
+  const clearError = (field: AssessmentField) =>
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+
+  const previewMark = parseNumber(mark);
+  const previewOutOf = parseNumber(outOf);
+
+  // Load how much weighting is already used, for the hint and validation
+  useEffect(() => {
+    fetchAssessments(moduleId)
+      .then((all) => setOtherWeighting(calculateTotalWeighting(all)))
+      .catch(() => {});
+  }, [moduleId]);
 
   const handleSave = async () => {
-    if (!name.trim()) {
-      Alert.alert('Error', 'Assessment name is required.');
-      return;
-    }
-    const markNum = parseFloat(mark);
-    const outOfNum = parseFloat(outOf);
-    const weightingNum = parseFloat(weighting);
-
-    if (isNaN(markNum) || isNaN(outOfNum) || isNaN(weightingNum)) {
-      Alert.alert('Error', 'Mark, Out Of and Weighting must be valid numbers.');
-      return;
-    }
-    if (outOfNum <= 0) {
-      Alert.alert('Error', 'Out Of must be greater than 0.');
-      return;
-    }
-    if (markNum > outOfNum) {
-      Alert.alert('Error', 'Mark cannot exceed Out Of.');
-      return;
-    }
-    if (weightingNum <= 0 || weightingNum > 100) {
-      Alert.alert('Error', 'Weighting must be between 1 and 100.');
-      return;
-    }
+    const found = validateAssessment({ name, mark, outOf, weighting }, otherWeighting);
+    setErrors(found);
+    if (hasErrors(found)) return;
 
     setLoading(true);
     try {
-      const existing = await fetchAssessments(moduleId);
-      const totalWeighting = calculateTotalWeighting(existing);
-      if (totalWeighting + weightingNum > 100) {
-        Alert.alert(
-          'Weighting Exceeded',
-          `Adding ${weightingNum}% would bring total weighting to ${(totalWeighting + weightingNum).toFixed(0)}%. You have ${(100 - totalWeighting).toFixed(0)}% remaining.`
-        );
-        setLoading(false);
+      // Re-check against the latest saved data before writing
+      const latest = calculateTotalWeighting(await fetchAssessments(moduleId));
+      const recheck = validateAssessment({ name, mark, outOf, weighting }, latest);
+      if (hasErrors(recheck)) {
+        setOtherWeighting(latest);
+        setErrors(recheck);
         return;
       }
-      await addAssessment(moduleId, name.trim(), markNum, outOfNum, weightingNum);
+      await addAssessment(moduleId, name.trim(), parseNumber(mark)!, parseNumber(outOf)!, parseNumber(weighting)!);
       navigation.goBack();
     } catch (e) {
-      Alert.alert('Error', 'Failed to save assessment. Please try again.');
+      showError("Couldn't save assessment", e);
     } finally {
       setLoading(false);
     }
@@ -85,66 +89,57 @@ export default function AddAssessmentScreen() {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>‹ Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Add Assessment</Text>
-        <View style={{ width: 60 }} />
-      </View>
+      <ScreenHeader title="Add Assessment" onBack={() => navigation.goBack()} />
 
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.label}>Assessment Name *</Text>
-        <TextInput
-          style={styles.input}
+        <FormField
+          label="Assessment Name *"
           value={name}
-          onChangeText={setName}
+          onChangeText={(v) => { setName(v); clearError('name'); }}
           placeholder="e.g. Test 1"
-          placeholderTextColor={colours.grey4}
+          error={errors.name}
         />
 
         <View style={styles.row}>
           <View style={styles.rowItem}>
-            <Text style={styles.label}>Mark *</Text>
-            <TextInput
-              style={styles.input}
+            <FormField
+              label="Mark *"
               value={mark}
-              onChangeText={setMark}
+              onChangeText={(v) => { setMark(v); clearError('mark'); }}
               keyboardType="decimal-pad"
               placeholder="e.g. 74"
-              placeholderTextColor={colours.grey4}
+              error={errors.mark}
             />
           </View>
           <View style={styles.rowItem}>
-            <Text style={styles.label}>Out Of *</Text>
-            <TextInput
-              style={styles.input}
+            <FormField
+              label="Out Of *"
               value={outOf}
-              onChangeText={setOutOf}
+              onChangeText={(v) => { setOutOf(v); clearError('outOf'); clearError('mark'); }}
               keyboardType="decimal-pad"
               placeholder="e.g. 100"
-              placeholderTextColor={colours.grey4}
+              error={errors.outOf}
             />
           </View>
         </View>
 
-        <Text style={styles.label}>Weighting (%) *</Text>
-        <TextInput
-          style={styles.input}
+        <FormField
+          label="Weighting (%) *"
           value={weighting}
-          onChangeText={setWeighting}
+          onChangeText={(v) => { setWeighting(v); clearError('weighting'); }}
           keyboardType="decimal-pad"
           placeholder="e.g. 30"
-          placeholderTextColor={colours.grey4}
+          error={errors.weighting}
+          hint={`${Math.max(0, 100 - otherWeighting).toFixed(0)}% weighting left in this module`}
         />
 
-        {mark && outOf && !isNaN(parseFloat(mark)) && !isNaN(parseFloat(outOf)) && parseFloat(outOf) > 0 && (
+        {previewMark !== null && previewOutOf !== null && previewOutOf > 0 && (
           <View style={styles.previewStrip}>
             <Text style={styles.previewText}>
-              Score preview: {((parseFloat(mark) / parseFloat(outOf)) * 100).toFixed(1)}%
+              Score preview: {((previewMark / previewOutOf) * 100).toFixed(1)}%
             </Text>
           </View>
         )}
@@ -155,7 +150,7 @@ export default function AddAssessmentScreen() {
           disabled={loading}
         >
           {loading
-            ? <ActivityIndicator color={colours.white} />
+            ? <ActivityIndicator color={colours.onPrimary} />
             : <Text style={styles.btnPrimaryText}>Save Assessment</Text>
           }
         </TouchableOpacity>
@@ -171,22 +166,8 @@ export default function AddAssessmentScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colours: Palette) => StyleSheet.create({
   flex: { flex: 1, backgroundColor: colours.background },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.screenPadding,
-    paddingTop: 56,
-    paddingBottom: 12,
-    backgroundColor: colours.white,
-    borderBottomWidth: 1,
-    borderBottomColor: colours.grey3,
-  },
-  backBtn: { width: 60 },
-  backText: { fontSize: 16, color: colours.primary, fontWeight: '500' },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: colours.text },
   content: { padding: spacing.screenPadding, paddingTop: 24 },
   label: {
     fontSize: 12,
@@ -197,7 +178,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   input: {
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
     borderWidth: 1.5,
     borderColor: colours.grey3,
     borderRadius: spacing.borderRadius,
@@ -214,7 +195,7 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 16,
   },
-  previewText: { fontSize: 13, color: colours.primary, fontWeight: '600' },
+  previewText: { fontSize: 13, color: colours.accent, fontWeight: '600' },
   btnPrimary: {
     backgroundColor: colours.primary,
     borderRadius: spacing.borderRadius,
@@ -222,7 +203,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  btnPrimaryText: { color: colours.white, fontSize: 15, fontWeight: '700' },
+  btnPrimaryText: { color: colours.onPrimary, fontSize: 15, fontWeight: '700' },
   btnSecondary: {
     alignItems: 'center',
     padding: 15,
@@ -230,7 +211,7 @@ const styles = StyleSheet.create({
     borderRadius: spacing.borderRadius,
     borderWidth: 1.5,
     borderColor: colours.grey3,
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
   },
   btnSecondaryText: { color: colours.grey5, fontSize: 15, fontWeight: '600' },
 });

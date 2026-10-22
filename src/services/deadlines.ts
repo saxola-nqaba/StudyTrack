@@ -9,9 +9,9 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { Deadline } from '../types/index';
+import { userPath } from './user';
 
-const TEMP_USER_ID = 'temp-user-123';
-const deadlinesPath = () => `users/${TEMP_USER_ID}/deadlines`;
+export const deadlinesPath = () => `${userPath()}/deadlines`;
 
 export const fetchDeadlines = async (): Promise<Deadline[]> => {
   const snap = await getDocs(collection(db, deadlinesPath()));

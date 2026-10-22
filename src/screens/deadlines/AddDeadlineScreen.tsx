@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,18 +12,26 @@ import {
   Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { DeadlinesStackParamList } from '../../navigation/DeadlinesNavigator';
 import { addDeadline } from '../../services/deadlines';
 import { fetchModules } from '../../services/modules';
-import { colours } from '../../constants/colours';
+import ScreenHeader from '../../components/ScreenHeader';
+import { useTheme } from '../../theme/ThemeContext';
+import { Palette } from '../../constants/colours';
 import { spacing } from '../../constants/spacing';
+import { showError } from '../../utils/errors';
+import { buildValidDate } from '../../utils/dates';
+import FormField from '../../components/FormField';
+import { validateDeadline, hasErrors, FieldErrors, DeadlineField } from '../../utils/validation';
 import { Module } from '../../types/index';
 
-type Nav = NativeStackNavigationProp<DeadlinesStackParamList, 'AddDeadline'>;
+type Nav = StackNavigationProp<DeadlinesStackParamList, 'AddDeadline'>;
 
 export default function AddDeadlineScreen() {
+  const { colours } = useTheme();
+  const styles = useMemo(() => makeStyles(colours), [colours]);
   const navigation = useNavigation<Nav>();
   const [modules, setModules] = useState<Module[]>([]);
   const [selectedModule, setSelectedModule] = useState<Module | null>(null);
@@ -32,6 +40,14 @@ export default function AddDeadlineScreen() {
   const [month, setMonth] = useState('');
   const [year, setYear] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<FieldErrors<DeadlineField>>({});
+
+  const clearError = (field: DeadlineField) =>
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
   const [showModulePicker, setShowModulePicker] = useState(false);
 
   useEffect(() => {
@@ -40,41 +56,17 @@ export default function AddDeadlineScreen() {
         const mods = await fetchModules();
         setModules(mods);
       } catch (e) {
-        Alert.alert('Error', 'Failed to load modules.');
+        showError("Couldn't load modules", e);
       }
     };
     load();
   }, []);
 
   const handleSave = async () => {
-    if (!selectedModule) {
-      Alert.alert('Error', 'Please select a module.');
-      return;
-    }
-    if (!assessmentName.trim()) {
-      Alert.alert('Error', 'Assessment name is required.');
-      return;
-    }
-
-    const dayNum = parseInt(day);
-    const monthNum = parseInt(month);
-    const yearNum = parseInt(year);
-
-    if (
-      isNaN(dayNum) || isNaN(monthNum) || isNaN(yearNum) ||
-      dayNum < 1 || dayNum > 31 ||
-      monthNum < 1 || monthNum > 12 ||
-      yearNum < 2024
-    ) {
-      Alert.alert('Error', 'Please enter a valid date.');
-      return;
-    }
-
-    const date = new Date(yearNum, monthNum - 1, dayNum);
-    if (isNaN(date.getTime())) {
-      Alert.alert('Error', 'Invalid date.');
-      return;
-    }
+    const found = validateDeadline(!!selectedModule, assessmentName, day, month, year);
+    setErrors(found);
+    if (hasErrors(found) || !selectedModule) return;
+    const date = buildValidDate(day, month, year)!;
 
     setLoading(true);
     try {
@@ -86,7 +78,7 @@ export default function AddDeadlineScreen() {
       );
       navigation.goBack();
     } catch (e) {
-      Alert.alert('Error', 'Failed to save deadline.');
+      showError("Couldn't save deadline", e);
     } finally {
       setLoading(false);
     }
@@ -97,13 +89,7 @@ export default function AddDeadlineScreen() {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>‹ Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Add Deadline</Text>
-        <View style={{ width: 60 }} />
-      </View>
+      <ScreenHeader title="Add Deadline" onBack={() => navigation.goBack()} />
 
       <ScrollView
         contentContainerStyle={styles.content}
@@ -112,7 +98,7 @@ export default function AddDeadlineScreen() {
         {/* Module Picker */}
         <Text style={styles.label}>Module *</Text>
         <TouchableOpacity
-          style={styles.picker}
+          style={[styles.picker, errors.module ? styles.inputInvalid : null]}
           onPress={() => setShowModulePicker(!showModulePicker)}
         >
           <Text style={selectedModule ? styles.pickerSelected : styles.pickerPlaceholder}>
@@ -124,6 +110,8 @@ export default function AddDeadlineScreen() {
             color={colours.grey4}
           />
         </TouchableOpacity>
+
+        {errors.module ? <Text style={styles.pickerError}>{errors.module}</Text> : null}
 
         {showModulePicker && (
           <View style={styles.dropdownList}>
@@ -137,11 +125,12 @@ export default function AddDeadlineScreen() {
                   onPress={() => {
                     setSelectedModule(m);
                     setShowModulePicker(false);
+                    clearError('module');
                   }}
                 >
                   <Text style={styles.dropdownItemText}>{m.name}</Text>
                   {selectedModule?.id === m.id && (
-                    <Ionicons name="checkmark" size={16} color={colours.primary} />
+                    <Ionicons name="checkmark" size={16} color={colours.accent} />
                   )}
                 </TouchableOpacity>
               ))
@@ -149,13 +138,12 @@ export default function AddDeadlineScreen() {
           </View>
         )}
 
-        <Text style={styles.label}>Assessment Name *</Text>
-        <TextInput
-          style={styles.input}
+        <FormField
+          label="Assessment Name *"
           value={assessmentName}
-          onChangeText={setAssessmentName}
+          onChangeText={(v) => { setAssessmentName(v); clearError('name'); }}
           placeholder="e.g. Test 2, Assignment 1"
-          placeholderTextColor={colours.grey4}
+          error={errors.name}
         />
 
         <Text style={styles.label}>Due Date *</Text>
@@ -163,9 +151,9 @@ export default function AddDeadlineScreen() {
           <View style={styles.dateItem}>
             <Text style={styles.dateLabel}>Day</Text>
             <TextInput
-              style={styles.dateInput}
+              style={[styles.dateInput, errors.date ? styles.inputInvalid : null]}
               value={day}
-              onChangeText={setDay}
+              onChangeText={(v) => { setDay(v); clearError('date'); }}
               keyboardType="number-pad"
               placeholder="DD"
               placeholderTextColor={colours.grey4}
@@ -175,9 +163,9 @@ export default function AddDeadlineScreen() {
           <View style={styles.dateItem}>
             <Text style={styles.dateLabel}>Month</Text>
             <TextInput
-              style={styles.dateInput}
+              style={[styles.dateInput, errors.date ? styles.inputInvalid : null]}
               value={month}
-              onChangeText={setMonth}
+              onChangeText={(v) => { setMonth(v); clearError('date'); }}
               keyboardType="number-pad"
               placeholder="MM"
               placeholderTextColor={colours.grey4}
@@ -187,9 +175,9 @@ export default function AddDeadlineScreen() {
           <View style={[styles.dateItem, { flex: 1.5 }]}>
             <Text style={styles.dateLabel}>Year</Text>
             <TextInput
-              style={styles.dateInput}
+              style={[styles.dateInput, errors.date ? styles.inputInvalid : null]}
               value={year}
-              onChangeText={setYear}
+              onChangeText={(v) => { setYear(v); clearError('date'); }}
               keyboardType="number-pad"
               placeholder="YYYY"
               placeholderTextColor={colours.grey4}
@@ -197,6 +185,7 @@ export default function AddDeadlineScreen() {
             />
           </View>
         </View>
+        {errors.date ? <Text style={styles.dateError}>{errors.date}</Text> : null}
 
         <TouchableOpacity
           style={styles.btnPrimary}
@@ -204,7 +193,7 @@ export default function AddDeadlineScreen() {
           disabled={loading}
         >
           {loading
-            ? <ActivityIndicator color={colours.white} />
+            ? <ActivityIndicator color={colours.onPrimary} />
             : <Text style={styles.btnPrimaryText}>Save Deadline</Text>
           }
         </TouchableOpacity>
@@ -220,22 +209,8 @@ export default function AddDeadlineScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colours: Palette) => StyleSheet.create({
   flex: { flex: 1, backgroundColor: colours.background },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.screenPadding,
-    paddingTop: 56,
-    paddingBottom: 12,
-    backgroundColor: colours.white,
-    borderBottomWidth: 1,
-    borderBottomColor: colours.grey3,
-  },
-  backBtn: { width: 60 },
-  backText: { fontSize: 16, color: colours.primary, fontWeight: '500' },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: colours.text },
   content: { padding: spacing.screenPadding, paddingTop: 24 },
   label: {
     fontSize: 12,
@@ -246,7 +221,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   picker: {
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
     borderWidth: 1.5,
     borderColor: colours.grey3,
     borderRadius: spacing.borderRadius,
@@ -259,7 +234,7 @@ const styles = StyleSheet.create({
   pickerSelected: { fontSize: 15, color: colours.text },
   pickerPlaceholder: { fontSize: 15, color: colours.grey4 },
   dropdownList: {
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
     borderWidth: 1.5,
     borderColor: colours.grey3,
     borderRadius: spacing.borderRadius,
@@ -277,7 +252,7 @@ const styles = StyleSheet.create({
   },
   dropdownItemText: { fontSize: 15, color: colours.text },
   input: {
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
     borderWidth: 1.5,
     borderColor: colours.grey3,
     borderRadius: spacing.borderRadius,
@@ -287,10 +262,13 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   dateRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
+  inputInvalid: { borderColor: colours.danger, backgroundColor: colours.dangerPale },
+  dateError: { fontSize: 12, color: colours.danger, fontWeight: '500', marginTop: -16, marginBottom: 20 },
+  pickerError: { fontSize: 12, color: colours.danger, fontWeight: '500', marginTop: -10, marginBottom: 16 },
   dateItem: { flex: 1 },
   dateLabel: { fontSize: 11, color: colours.grey5, marginBottom: 4 },
   dateInput: {
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
     borderWidth: 1.5,
     borderColor: colours.grey3,
     borderRadius: spacing.borderRadius,
@@ -306,7 +284,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  btnPrimaryText: { color: colours.white, fontSize: 15, fontWeight: '700' },
+  btnPrimaryText: { color: colours.onPrimary, fontSize: 15, fontWeight: '700' },
   btnSecondary: {
     alignItems: 'center',
     padding: 15,
@@ -314,7 +292,7 @@ const styles = StyleSheet.create({
     borderRadius: spacing.borderRadius,
     borderWidth: 1.5,
     borderColor: colours.grey3,
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
   },
   btnSecondaryText: { color: colours.grey5, fontSize: 15, fontWeight: '600' },
 });

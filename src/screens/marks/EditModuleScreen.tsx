@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,16 +12,23 @@ import {
   Alert,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { MarksStackParamList } from '../../navigation/MarksNavigator';
 import { updateModule, deleteModule, fetchModules } from '../../services/modules';
-import { colours } from '../../constants/colours';
+import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
+import { useTheme } from '../../theme/ThemeContext';
+import { Palette } from '../../constants/colours';
 import { spacing } from '../../constants/spacing';
+import { showError } from '../../utils/errors';
+import FormField from '../../components/FormField';
+import { validateModule, hasErrors, FieldErrors } from '../../utils/validation';
 
-type Nav = NativeStackNavigationProp<MarksStackParamList, 'EditModule'>;
+type Nav = StackNavigationProp<MarksStackParamList, 'EditModule'>;
 type Route = RouteProp<MarksStackParamList, 'EditModule'>;
 
 export default function EditModuleScreen() {
+  const { colours } = useTheme();
+  const styles = useMemo(() => makeStyles(colours), [colours]);
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
   const { moduleId } = route.params;
@@ -30,6 +37,7 @@ export default function EditModuleScreen() {
   const [code, setCode] = useState('');
   const [level, setLevel] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<FieldErrors<'name'>>({});
   const [deleting, setDeleting] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
 
@@ -44,7 +52,7 @@ export default function EditModuleScreen() {
           setLevel(module.level || '');
         }
       } catch (e) {
-        Alert.alert('Error', 'Failed to load module.');
+        showError("Couldn't load module", e);
       } finally {
         setInitialLoading(false);
       }
@@ -53,10 +61,9 @@ export default function EditModuleScreen() {
   }, [moduleId]);
 
   const handleSave = async () => {
-    if (!name.trim()) {
-      Alert.alert('Error', 'Module name is required.');
-      return;
-    }
+    const found = validateModule(name);
+    setErrors(found);
+    if (hasErrors(found)) return;
     setLoading(true);
     try {
       await updateModule(moduleId, {
@@ -66,7 +73,7 @@ export default function EditModuleScreen() {
       });
       navigation.goBack();
     } catch (e) {
-      Alert.alert('Error', 'Failed to update module.');
+      showError("Couldn't update module", e);
     } finally {
       setLoading(false);
     }
@@ -75,7 +82,7 @@ export default function EditModuleScreen() {
   const handleDelete = () => {
     Alert.alert(
       'Delete Module',
-      'Deleting this module will also remove all its assessments and goal. This cannot be undone.',
+      'Deleting this module will also remove all its assessments, its goal and its deadlines. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -87,7 +94,7 @@ export default function EditModuleScreen() {
               await deleteModule(moduleId);
               navigation.navigate('Dashboard');
             } catch (e) {
-              Alert.alert('Error', 'Failed to delete module.');
+              showError("Couldn't delete module", e);
               setDeleting(false);
             }
           },
@@ -99,7 +106,7 @@ export default function EditModuleScreen() {
   if (initialLoading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colours.primary} />
+        <ActivityIndicator size="large" color={colours.accent} />
       </View>
     );
   }
@@ -109,46 +116,30 @@ export default function EditModuleScreen() {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>‹ Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Edit Module</Text>
-        <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
-          {deleting
-            ? <ActivityIndicator size="small" color={colours.danger} />
-            : <Text style={styles.deleteText}>Delete</Text>
-          }
-        </TouchableOpacity>
-      </View>
+      <ScreenHeader title="Edit Module" onBack={() => navigation.goBack()} right={<HeaderAction label="Delete" destructive loading={deleting} onPress={handleDelete} />} />
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.label}>Module Name *</Text>
-        <TextInput
-          style={styles.input}
+        <FormField
+          label="Module Name *"
           value={name}
-          onChangeText={setName}
+          onChangeText={(v) => { setName(v); setErrors({}); }}
           placeholder="e.g. Mathematics"
-          placeholderTextColor={colours.grey4}
+          error={errors.name}
         />
 
-        <Text style={styles.label}>Module Code</Text>
-        <TextInput
-          style={styles.input}
+        <FormField
+          label="Module Code"
           value={code}
           onChangeText={setCode}
           placeholder="e.g. MATH101"
-          placeholderTextColor={colours.grey4}
           autoCapitalize="characters"
         />
 
-        <Text style={styles.label}>Level / Year</Text>
-        <TextInput
-          style={styles.input}
+        <FormField
+          label="Level / Year"
           value={level}
           onChangeText={setLevel}
           placeholder="e.g. Third Year"
-          placeholderTextColor={colours.grey4}
         />
 
         <TouchableOpacity
@@ -157,7 +148,7 @@ export default function EditModuleScreen() {
           disabled={loading}
         >
           {loading
-            ? <ActivityIndicator color={colours.white} />
+            ? <ActivityIndicator color={colours.onPrimary} />
             : <Text style={styles.btnPrimaryText}>Save Changes</Text>
           }
         </TouchableOpacity>
@@ -173,25 +164,9 @@ export default function EditModuleScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colours: Palette) => StyleSheet.create({
   flex: { flex: 1, backgroundColor: colours.background },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.screenPadding,
-    paddingTop: 56,
-    paddingBottom: 12,
-    backgroundColor: colours.white,
-    borderBottomWidth: 1,
-    borderBottomColor: colours.grey3,
-  },
-  backBtn: { width: 60 },
-  backText: { fontSize: 16, color: colours.primary, fontWeight: '500' },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: colours.text },
-  deleteBtn: { width: 60, alignItems: 'flex-end' },
-  deleteText: { fontSize: 15, color: colours.danger, fontWeight: '600' },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colours.background },
   content: { padding: spacing.screenPadding, paddingTop: 24 },
   label: {
     fontSize: 12,
@@ -202,7 +177,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   input: {
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
     borderWidth: 1.5,
     borderColor: colours.grey3,
     borderRadius: spacing.borderRadius,
@@ -218,7 +193,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  btnPrimaryText: { color: colours.white, fontSize: 15, fontWeight: '700' },
+  btnPrimaryText: { color: colours.onPrimary, fontSize: 15, fontWeight: '700' },
   btnSecondary: {
     alignItems: 'center',
     padding: 15,
@@ -226,7 +201,7 @@ const styles = StyleSheet.create({
     borderRadius: spacing.borderRadius,
     borderWidth: 1.5,
     borderColor: colours.grey3,
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
   },
   btnSecondaryText: { color: colours.grey5, fontSize: 15, fontWeight: '600' },
 });

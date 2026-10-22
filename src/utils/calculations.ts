@@ -76,6 +76,8 @@ export const calculateFeasibility = (
   const required = calculateRequiredScore(assessments, targetPercentage);
   if (required === null) return 'Impossible';
 
+  // Marks already banked guarantee the target, even with 0% on the rest
+  if (required <= 0) return 'Reached';
   if (required > 100) return 'Impossible';
   if (required > 90) return 'Unlikely';
   if (required > 80) return 'At Risk';
@@ -109,8 +111,20 @@ export const calculateDirection = (assessments: Assessment[]): Direction => {
 };
 
 // ── OVERALL AVERAGE ───────────────────────────────────────────
-export const calculateOverallAverage = (moduleAverages: number[]): number => {
-  if (!moduleAverages || moduleAverages.length === 0) return 0;
-  const sum = moduleAverages.reduce((acc, avg) => acc + avg, 0);
-  return sum / moduleAverages.length;
+// Mean of module averages, counting ONLY modules that have marks.
+// A new module with no assessments is not "0%" — it's just not started.
+// Returns null when no module has any marks yet.
+export const calculateOverallAverage = (
+  modules: { assessments: Assessment[] }[]
+): number | null => {
+  const withMarks = modules.filter((m) => m.assessments && m.assessments.length > 0);
+  if (withMarks.length === 0) return null;
+  const sum = withMarks.reduce((acc, m) => acc + calculateWeightedAverage(m.assessments), 0);
+  return sum / withMarks.length;
 };
+// ── COMPARE AGAINST A TARGET (as displayed) ───────────────────
+// Compare at the 1 decimal place the user actually sees, so
+// "74.3% vs 74.3%" never shows as "Below" because the hidden
+// values were 74.27 and 74.33.
+export const meetsTarget = (value: number, target: number): boolean =>
+  Math.round(value * 10) >= Math.round(target * 10);

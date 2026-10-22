@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,13 +12,19 @@ import {
   Alert,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { DeadlinesStackParamList } from '../../navigation/DeadlinesNavigator';
 import { fetchDeadlines, updateDeadline, deleteDeadline } from '../../services/deadlines';
-import { colours } from '../../constants/colours';
+import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
+import { useTheme } from '../../theme/ThemeContext';
+import { Palette } from '../../constants/colours';
 import { spacing } from '../../constants/spacing';
+import { showError } from '../../utils/errors';
+import { buildValidDate } from '../../utils/dates';
+import FormField from '../../components/FormField';
+import { validateDeadline, hasErrors, FieldErrors, DeadlineField } from '../../utils/validation';
 
-type Nav = NativeStackNavigationProp<DeadlinesStackParamList, 'EditDeadline'>;
+type Nav = StackNavigationProp<DeadlinesStackParamList, 'EditDeadline'>;
 type Route = RouteProp<DeadlinesStackParamList, 'EditDeadline'>;
 
 const getDate = (ts: any): Date => {
@@ -28,6 +34,8 @@ const getDate = (ts: any): Date => {
 };
 
 export default function EditDeadlineScreen() {
+  const { colours } = useTheme();
+  const styles = useMemo(() => makeStyles(colours), [colours]);
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
   const { deadlineId } = route.params;
@@ -38,6 +46,14 @@ export default function EditDeadlineScreen() {
   const [month, setMonth] = useState('');
   const [year, setYear] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<FieldErrors<DeadlineField>>({});
+
+  const clearError = (field: DeadlineField) =>
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
   const [deleting, setDeleting] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
 
@@ -55,7 +71,7 @@ export default function EditDeadlineScreen() {
           setYear(date.getFullYear().toString());
         }
       } catch (e) {
-        Alert.alert('Error', 'Failed to load deadline.');
+        showError("Couldn't load deadline", e);
       } finally {
         setInitialLoading(false);
       }
@@ -64,32 +80,17 @@ export default function EditDeadlineScreen() {
   }, [deadlineId]);
 
   const handleSave = async () => {
-    if (!assessmentName.trim()) {
-      Alert.alert('Error', 'Assessment name is required.');
-      return;
-    }
+    const found = validateDeadline(true, assessmentName, day, month, year);
+    setErrors(found);
+    if (hasErrors(found)) return;
+    const date = buildValidDate(day, month, year)!;
 
-    const dayNum = parseInt(day);
-    const monthNum = parseInt(month);
-    const yearNum = parseInt(year);
-
-    if (
-      isNaN(dayNum) || isNaN(monthNum) || isNaN(yearNum) ||
-      dayNum < 1 || dayNum > 31 ||
-      monthNum < 1 || monthNum > 12 ||
-      yearNum < 2024
-    ) {
-      Alert.alert('Error', 'Please enter a valid date.');
-      return;
-    }
-
-    const date = new Date(yearNum, monthNum - 1, dayNum);
     setLoading(true);
     try {
       await updateDeadline(deadlineId, moduleName, assessmentName.trim(), date);
       navigation.goBack();
     } catch (e) {
-      Alert.alert('Error', 'Failed to update deadline.');
+      showError("Couldn't update deadline", e);
     } finally {
       setLoading(false);
     }
@@ -110,7 +111,7 @@ export default function EditDeadlineScreen() {
               await deleteDeadline(deadlineId);
               navigation.goBack();
             } catch (e) {
-              Alert.alert('Error', 'Failed to delete deadline.');
+              showError("Couldn't delete deadline", e);
               setDeleting(false);
             }
           },
@@ -122,7 +123,7 @@ export default function EditDeadlineScreen() {
   if (initialLoading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colours.primary} />
+        <ActivityIndicator size="large" color={colours.accent} />
       </View>
     );
   }
@@ -132,18 +133,7 @@ export default function EditDeadlineScreen() {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>‹ Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Edit Deadline</Text>
-        <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
-          {deleting
-            ? <ActivityIndicator size="small" color={colours.danger} />
-            : <Text style={styles.deleteText}>Delete</Text>
-          }
-        </TouchableOpacity>
-      </View>
+      <ScreenHeader title="Edit Deadline" onBack={() => navigation.goBack()} right={<HeaderAction label="Delete" destructive loading={deleting} onPress={handleDelete} />} />
 
       <ScrollView
         contentContainerStyle={styles.content}
@@ -154,13 +144,12 @@ export default function EditDeadlineScreen() {
           <Text style={styles.readOnlyText}>{moduleName}</Text>
         </View>
 
-        <Text style={styles.label}>Assessment Name *</Text>
-        <TextInput
-          style={styles.input}
+        <FormField
+          label="Assessment Name *"
           value={assessmentName}
-          onChangeText={setAssessmentName}
-          placeholder="e.g. Test 2"
-          placeholderTextColor={colours.grey4}
+          onChangeText={(v) => { setAssessmentName(v); clearError('name'); }}
+          placeholder="e.g. Test 2, Assignment 1"
+          error={errors.name}
         />
 
         <Text style={styles.label}>Due Date *</Text>
@@ -168,9 +157,9 @@ export default function EditDeadlineScreen() {
           <View style={styles.dateItem}>
             <Text style={styles.dateLabel}>Day</Text>
             <TextInput
-              style={styles.dateInput}
+              style={[styles.dateInput, errors.date ? styles.inputInvalid : null]}
               value={day}
-              onChangeText={setDay}
+              onChangeText={(v) => { setDay(v); clearError('date'); }}
               keyboardType="number-pad"
               placeholder="DD"
               placeholderTextColor={colours.grey4}
@@ -180,9 +169,9 @@ export default function EditDeadlineScreen() {
           <View style={styles.dateItem}>
             <Text style={styles.dateLabel}>Month</Text>
             <TextInput
-              style={styles.dateInput}
+              style={[styles.dateInput, errors.date ? styles.inputInvalid : null]}
               value={month}
-              onChangeText={setMonth}
+              onChangeText={(v) => { setMonth(v); clearError('date'); }}
               keyboardType="number-pad"
               placeholder="MM"
               placeholderTextColor={colours.grey4}
@@ -192,9 +181,9 @@ export default function EditDeadlineScreen() {
           <View style={[styles.dateItem, { flex: 1.5 }]}>
             <Text style={styles.dateLabel}>Year</Text>
             <TextInput
-              style={styles.dateInput}
+              style={[styles.dateInput, errors.date ? styles.inputInvalid : null]}
               value={year}
-              onChangeText={setYear}
+              onChangeText={(v) => { setYear(v); clearError('date'); }}
               keyboardType="number-pad"
               placeholder="YYYY"
               placeholderTextColor={colours.grey4}
@@ -202,6 +191,7 @@ export default function EditDeadlineScreen() {
             />
           </View>
         </View>
+        {errors.date ? <Text style={styles.dateError}>{errors.date}</Text> : null}
 
         <TouchableOpacity
           style={styles.btnPrimary}
@@ -209,7 +199,7 @@ export default function EditDeadlineScreen() {
           disabled={loading}
         >
           {loading
-            ? <ActivityIndicator color={colours.white} />
+            ? <ActivityIndicator color={colours.onPrimary} />
             : <Text style={styles.btnPrimaryText}>Save Changes</Text>
           }
         </TouchableOpacity>
@@ -225,25 +215,9 @@ export default function EditDeadlineScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colours: Palette) => StyleSheet.create({
   flex: { flex: 1, backgroundColor: colours.background },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.screenPadding,
-    paddingTop: 56,
-    paddingBottom: 12,
-    backgroundColor: colours.white,
-    borderBottomWidth: 1,
-    borderBottomColor: colours.grey3,
-  },
-  backBtn: { width: 60 },
-  backText: { fontSize: 16, color: colours.primary, fontWeight: '500' },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: colours.text },
-  deleteBtn: { width: 60, alignItems: 'flex-end' },
-  deleteText: { fontSize: 15, color: colours.danger, fontWeight: '600' },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colours.background },
   content: { padding: spacing.screenPadding, paddingTop: 24 },
   label: {
     fontSize: 12,
@@ -263,7 +237,7 @@ const styles = StyleSheet.create({
   },
   readOnlyText: { fontSize: 15, color: colours.grey5 },
   input: {
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
     borderWidth: 1.5,
     borderColor: colours.grey3,
     borderRadius: spacing.borderRadius,
@@ -273,10 +247,13 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   dateRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
+  inputInvalid: { borderColor: colours.danger, backgroundColor: colours.dangerPale },
+  dateError: { fontSize: 12, color: colours.danger, fontWeight: '500', marginTop: -16, marginBottom: 20 },
+  pickerError: { fontSize: 12, color: colours.danger, fontWeight: '500', marginTop: -10, marginBottom: 16 },
   dateItem: { flex: 1 },
   dateLabel: { fontSize: 11, color: colours.grey5, marginBottom: 4 },
   dateInput: {
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
     borderWidth: 1.5,
     borderColor: colours.grey3,
     borderRadius: spacing.borderRadius,
@@ -292,7 +269,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  btnPrimaryText: { color: colours.white, fontSize: 15, fontWeight: '700' },
+  btnPrimaryText: { color: colours.onPrimary, fontSize: 15, fontWeight: '700' },
   btnSecondary: {
     alignItems: 'center',
     padding: 15,
@@ -300,7 +277,7 @@ const styles = StyleSheet.create({
     borderRadius: spacing.borderRadius,
     borderWidth: 1.5,
     borderColor: colours.grey3,
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
   },
   btnSecondaryText: { color: colours.grey5, fontSize: 15, fontWeight: '600' },
 });

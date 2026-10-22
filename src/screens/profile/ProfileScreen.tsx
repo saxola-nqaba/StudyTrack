@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,20 +9,38 @@ import {
   ActivityIndicator,
   Alert,
   Switch,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchProfile, saveProfile, createProfile } from '../../services/profile';
-import { colours } from '../../constants/colours';
+import ScreenHeader, { HeaderAction } from '../../components/ScreenHeader';
+import { useTheme } from '../../theme/ThemeContext';
+import { Palette } from '../../constants/colours';
 import { spacing } from '../../constants/spacing';
+import { showError } from '../../utils/errors';
+import FormField from '../../components/FormField';
+import { validateProfile, hasErrors, FieldErrors, ProfileField } from '../../utils/validation';
 import { UserProfile } from '../../types/index';
 
 export default function ProfileScreen() {
+  const { colours, isDark, setDarkMode } = useTheme();
+  const styles = useMemo(() => makeStyles(colours), [colours]);
+  const navigation = useNavigation();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [errors, setErrors] = useState<FieldErrors<ProfileField>>({});
+
+  const clearError = (field: ProfileField) =>
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
 
   // Edit fields
   const [fullName, setFullName] = useState('');
@@ -50,7 +68,7 @@ export default function ProfileScreen() {
             setAcademicLevel(p.academicLevel || '');
           }
         } catch (e) {
-          Alert.alert('Error', 'Failed to load profile.');
+          showError("Couldn't load profile", e);
         } finally {
           setLoading(false);
         }
@@ -60,45 +78,54 @@ export default function ProfileScreen() {
   );
 
   const handleSave = async () => {
-    if (!fullName.trim()) {
-      Alert.alert('Error', 'Full name is required.');
-      return;
-    }
+    const found = validateProfile(fullName, email);
+    setErrors(found);
+    if (hasErrors(found)) return;
     setSaving(true);
     try {
-      await saveProfile({ fullName, username, email, academicLevel });
-      setProfile((prev) => prev ? { ...prev, fullName, username, email, academicLevel } : prev);
+      const clean = {
+        fullName: fullName.trim(),
+        username: username.trim(),
+        email: email.trim(),
+        academicLevel: academicLevel.trim(),
+      };
+      await saveProfile(clean);
+      setProfile((prev) => prev ? { ...prev, ...clean } : prev);
       setEditing(false);
     } catch (e) {
-      Alert.alert('Error', 'Failed to save profile.');
+      showError("Couldn't save profile", e);
     } finally {
       setSaving(false);
     }
   };
 
   const handleToggleDarkMode = async (value: boolean) => {
+    // Switch the theme instantly (and save on the phone), then sync to Firestore
+    setDarkMode(value);
+    setProfile((prev) => prev ? { ...prev, darkMode: value } : prev);
     try {
       await saveProfile({ darkMode: value });
-      setProfile((prev) => prev ? { ...prev, darkMode: value } : prev);
     } catch (e) {
-      Alert.alert('Error', 'Failed to update setting.');
+      // Theme still applies on this phone — only the cloud copy failed
+      Alert.alert('Sync issue', 'Dark mode was applied, but could not be saved to your profile.');
     }
   };
 
   const handleToggleNotifications = async (value: boolean) => {
+    // Flip the switch instantly, roll back if Firestore fails
+    setProfile((prev) => prev ? { ...prev, notifications: value } : prev);
     try {
       await saveProfile({ notifications: value });
-      setProfile((prev) => prev ? { ...prev, notifications: value } : prev);
     } catch (e) {
-      Alert.alert('Error', 'Failed to update setting.');
+      setProfile((prev) => prev ? { ...prev, notifications: !value } : prev);
+      showError("Couldn't update setting", e);
     }
   };
 
   const handleCreate = async () => {
-    if (!newFullName.trim()) {
-      Alert.alert('Error', 'Full name is required.');
-      return;
-    }
+    const found = validateProfile(newFullName, newEmail);
+    setErrors(found);
+    if (hasErrors(found)) return;
     setSaving(true);
     try {
       await createProfile(newFullName.trim(), newUsername.trim(), newEmail.trim(), newAcademicLevel.trim());
@@ -112,10 +139,20 @@ export default function ProfileScreen() {
       }
       setCreating(false);
     } catch (e) {
-      Alert.alert('Error', 'Failed to create profile.');
+      showError("Couldn't create profile", e);
     } finally {
       setSaving(false);
     }
+  };
+
+  // Cancel throws away unsaved edits, so reopening Edit shows the saved values
+  const handleCancelEdit = () => {
+    setFullName(profile?.fullName || '');
+    setUsername(profile?.username || '');
+    setEmail(profile?.email || '');
+    setAcademicLevel(profile?.academicLevel || '');
+    setErrors({});
+    setEditing(false);
   };
 
   const getInitials = (name: string) => {
@@ -130,7 +167,7 @@ export default function ProfileScreen() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colours.primary} />
+        <ActivityIndicator size="large" color={colours.accent} />
       </View>
     );
   }
@@ -139,9 +176,7 @@ export default function ProfileScreen() {
   if (!profile && !creating) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.appName}>Profile</Text>
-        </View>
+        <ScreenHeader title="Profile" onBack={() => navigation.goBack()} />
         <View style={styles.empty}>
           <Ionicons name="person-circle-outline" size={64} color={colours.grey3} />
           <Text style={styles.emptyTitle}>No profile yet</Text>
@@ -159,68 +194,47 @@ export default function ProfileScreen() {
 
   if (creating) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => setCreating(false)}>
-            <Text style={styles.backText}>‹ Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Create Profile</Text>
-          <View style={{ width: 60 }} />
-        </View>
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScreenHeader title="Create Profile" onBack={() => { setCreating(false); setErrors({}); }} />
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <Text style={styles.label}>Full Name *</Text>
-          <TextInput style={styles.input} value={newFullName} onChangeText={setNewFullName} placeholder="Your full name" placeholderTextColor={colours.grey4} />
-          <Text style={styles.label}>Username</Text>
-          <TextInput style={styles.input} value={newUsername} onChangeText={setNewUsername} placeholder="Choose a username" placeholderTextColor={colours.grey4} autoCapitalize="none" />
-          <Text style={styles.label}>Email</Text>
-          <TextInput style={styles.input} value={newEmail} onChangeText={setNewEmail} placeholder="you@email.com" placeholderTextColor={colours.grey4} keyboardType="email-address" autoCapitalize="none" />
-          <Text style={styles.label}>Academic Level</Text>
-          <TextInput style={styles.input} value={newAcademicLevel} onChangeText={setNewAcademicLevel} placeholder="e.g. Third Year" placeholderTextColor={colours.grey4} />
+          <FormField label="Full Name *" value={newFullName} onChangeText={(v) => { setNewFullName(v); clearError('fullName'); }} placeholder="Your full name" error={errors.fullName} />
+          <FormField label="Username" value={newUsername} onChangeText={setNewUsername} placeholder="Choose a username" autoCapitalize="none" />
+          <FormField label="Email" value={newEmail} onChangeText={(v) => { setNewEmail(v); clearError('email'); }} placeholder="you@email.com" keyboardType="email-address" autoCapitalize="none" error={errors.email} />
+          <FormField label="Academic Level" value={newAcademicLevel} onChangeText={setNewAcademicLevel} placeholder="e.g. Third Year" />
           <TouchableOpacity style={styles.btnPrimary} onPress={handleCreate} disabled={saving}>
-            {saving ? <ActivityIndicator color={colours.white} /> : <Text style={styles.btnPrimaryText}>Save Profile</Text>}
+            {saving ? <ActivityIndicator color={colours.onPrimary} /> : <Text style={styles.btnPrimaryText}>Save Profile</Text>}
           </TouchableOpacity>
         </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     );
   }
 
   if (editing) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => setEditing(false)}>
-            <Text style={styles.backText}>‹ Cancel</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Edit Profile</Text>
-          <TouchableOpacity onPress={handleSave} disabled={saving}>
-            {saving
-              ? <ActivityIndicator size="small" color={colours.primary} />
-              : <Text style={styles.saveText}>Save</Text>
-            }
-          </TouchableOpacity>
-        </View>
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScreenHeader
+          title="Edit Profile"
+          onBack={handleCancelEdit}
+          backLabel="Cancel"
+          right={<HeaderAction label="Save" loading={saving} onPress={handleSave} />}
+        />
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <Text style={styles.label}>Full Name *</Text>
-          <TextInput style={styles.input} value={fullName} onChangeText={setFullName} placeholder="Your full name" placeholderTextColor={colours.grey4} />
-          <Text style={styles.label}>Username</Text>
-          <TextInput style={styles.input} value={username} onChangeText={setUsername} placeholder="Username" placeholderTextColor={colours.grey4} autoCapitalize="none" />
-          <Text style={styles.label}>Email</Text>
-          <TextInput style={styles.input} value={email} onChangeText={setEmail} placeholder="you@email.com" placeholderTextColor={colours.grey4} keyboardType="email-address" autoCapitalize="none" />
-          <Text style={styles.label}>Academic Level</Text>
-          <TextInput style={styles.input} value={academicLevel} onChangeText={setAcademicLevel} placeholder="e.g. Third Year" placeholderTextColor={colours.grey4} />
+          <FormField label="Full Name *" value={fullName} onChangeText={(v) => { setFullName(v); clearError('fullName'); }} placeholder="Your full name" error={errors.fullName} />
+          <FormField label="Username" value={username} onChangeText={setUsername} placeholder="Username" autoCapitalize="none" />
+          <FormField label="Email" value={email} onChangeText={(v) => { setEmail(v); clearError('email'); }} placeholder="you@email.com" keyboardType="email-address" autoCapitalize="none" error={errors.email} />
+          <FormField label="Academic Level" value={academicLevel} onChangeText={setAcademicLevel} placeholder="e.g. Third Year" />
         </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     );
   }
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.appName}>Profile</Text>
-        <TouchableOpacity onPress={() => setEditing(true)}>
-          <Ionicons name="create-outline" size={24} color={colours.primary} />
-        </TouchableOpacity>
-      </View>
+      <ScreenHeader
+        title="Profile"
+        onBack={() => navigation.goBack()}
+        right={<HeaderAction label="Edit" onPress={() => setEditing(true)} />}
+      />
 
       <ScrollView contentContainerStyle={styles.scroll}>
         {/* Avatar */}
@@ -254,10 +268,10 @@ export default function ProfileScreen() {
           <View style={styles.row}>
             <Text style={styles.rowLabel}>Dark Mode</Text>
             <Switch
-              value={profile?.darkMode ?? false}
+              value={isDark}
               onValueChange={handleToggleDarkMode}
               trackColor={{ false: colours.grey3, true: colours.primary }}
-              thumbColor={colours.white}
+              thumbColor={colours.onPrimary}
             />
           </View>
           <View style={styles.rowDivider} />
@@ -267,7 +281,7 @@ export default function ProfileScreen() {
               value={profile?.notifications ?? false}
               onValueChange={handleToggleNotifications}
               trackColor={{ false: colours.grey3, true: colours.primary }}
-              thumbColor={colours.white}
+              thumbColor={colours.onPrimary}
             />
           </View>
         </View>
@@ -278,28 +292,13 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colours: Palette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colours.background },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.screenPadding,
-    paddingTop: 56,
-    paddingBottom: 12,
-    backgroundColor: colours.white,
-    borderBottomWidth: 1,
-    borderBottomColor: colours.grey3,
-  },
-  appName: { fontSize: 22, fontWeight: '800', color: colours.primary, letterSpacing: -0.5 },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: colours.text },
-  backText: { fontSize: 16, color: colours.primary, fontWeight: '500', width: 70 },
-  saveText: { fontSize: 16, color: colours.primary, fontWeight: '700', width: 70, textAlign: 'right' },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colours.background },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: spacing.screenPadding },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: colours.grey5 },
   emptyText: { fontSize: 14, color: colours.grey4, textAlign: 'center' },
-  scroll: { padding: spacing.screenPadding, paddingBottom: 40 },
+  scroll: { padding: spacing.screenPadding, paddingBottom: 16 },
   content: { padding: spacing.screenPadding, paddingTop: 24 },
   avatarSection: { alignItems: 'center', paddingVertical: 24 },
   avatar: {
@@ -311,11 +310,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 12,
   },
-  avatarText: { fontSize: 28, fontWeight: '800', color: colours.white },
+  avatarText: { fontSize: 28, fontWeight: '800', color: colours.onPrimary },
   profileName: { fontSize: 20, fontWeight: '800', color: colours.text, marginBottom: 4 },
   profileEmail: { fontSize: 13, color: colours.grey5 },
   section: {
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
     borderRadius: spacing.borderRadius,
     marginBottom: 12,
     borderWidth: 1.5,
@@ -340,7 +339,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   input: {
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
     borderWidth: 1.5,
     borderColor: colours.grey3,
     borderRadius: spacing.borderRadius,
@@ -356,7 +355,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  btnPrimaryText: { color: colours.white, fontSize: 15, fontWeight: '700' },
+  btnPrimaryText: { color: colours.onPrimary, fontSize: 15, fontWeight: '700' },
   version: {
     textAlign: 'center',
     fontSize: 12,

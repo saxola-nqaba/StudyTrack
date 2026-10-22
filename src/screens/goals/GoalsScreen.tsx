@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,12 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  RefreshControl,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
+import AppIcon from '../../components/AppIcon';
 import { GoalsStackParamList } from '../../navigation/GoalsNavigator';
 import { fetchModules } from '../../services/modules';
 import { fetchAssessments } from '../../services/assessments';
@@ -20,13 +22,19 @@ import {
   calculateFeasibility,
   calculateRequiredScore,
   calculateRemainingWeighting,
+  calculateOverallAverage,
+  meetsTarget,
   FeasibilityStatus,
 } from '../../utils/calculations';
-import { colours } from '../../constants/colours';
+import ScreenHeader from '../../components/ScreenHeader';
+import { useTheme } from '../../theme/ThemeContext';
+import { Palette } from '../../constants/colours';
 import { spacing } from '../../constants/spacing';
+import { useFocusLoad } from '../../hooks/useFocusLoad';
+import { useTabPressReset } from '../../hooks/useTabPressReset';
 import { Module, Assessment, Goal } from '../../types/index';
 
-type Nav = NativeStackNavigationProp<GoalsStackParamList, 'GoalsList'>;
+type Nav = StackNavigationProp<GoalsStackParamList, 'GoalsList'>;
 
 interface ModuleGoalData {
   module: Module;
@@ -34,57 +42,50 @@ interface ModuleGoalData {
   goal: Goal | null;
 }
 
-const feasibilityConfig = (status: FeasibilityStatus) => {
+const feasibilityConfig = (status: FeasibilityStatus, colours: Palette) => {
   switch (status) {
     case 'Reached': return { color: colours.success, bg: colours.successPale };
     case 'On Track': return { color: colours.success, bg: colours.successPale };
     case 'At Risk': return { color: colours.warning, bg: colours.warningPale };
-    case 'Unlikely': return { color: colours.orange, bg: '#FDEBD0' };
+    case 'Unlikely': return { color: colours.orange, bg: colours.orangePale };
     case 'Impossible': return { color: colours.danger, bg: colours.dangerPale };
     default: return { color: colours.grey4, bg: colours.grey2 };
   }
 };
 
 export default function GoalsScreen() {
+  const { colours } = useTheme();
+  const styles = useMemo(() => makeStyles(colours), [colours]);
   const navigation = useNavigation<Nav>();
   const [data, setData] = useState<ModuleGoalData[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useFocusEffect(
-    useCallback(() => {
-      const load = async () => {
-        setLoading(true);
-        try {
-          const modules = await fetchModules();
-          const result = await Promise.all(
-            modules.map(async (m) => {
-              const assessments = await fetchAssessments(m.id);
-              const goal = await fetchGoal(m.id);
-              return { module: m, assessments, goal };
-            })
-          );
-          setData(result);
-        } catch (e) {
-          Alert.alert('Error', 'Failed to load goals.');
-        } finally {
-          setLoading(false);
-        }
-      };
-      load();
-    }, [])
-  );
+  // Spinner on first visit only; quiet refresh when you come back; pull to refresh
+  const listRef = useRef<any>(null);
+  const { loading, refreshing, onRefresh, refreshQuietly } = useFocusLoad(async () => {
+    const modules = await fetchModules();
+    const result = await Promise.all(
+      modules.map(async (m) => {
+        const assessments = await fetchAssessments(m.id);
+        const goal = await fetchGoal(m.id);
+        return { module: m, assessments, goal };
+      })
+    );
+    setData(result);
+  }, "Couldn't load goals");
+
+  // Tap the tab icon → back to the top (and refresh if already on this tab)
+  useTabPressReset(listRef, refreshQuietly);
 
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colours.primary} />
+        <ActivityIndicator size="large" color={colours.accent} />
       </View>
     );
   }
 
-    const overallAverage = data.length > 0
-    ? data.reduce((sum, item) => sum + calculateWeightedAverage(item.assessments), 0) / data.length
-    : 0;
+  // Only modules with marks count — null means nothing recorded yet
+  const overallAverage = calculateOverallAverage(data);
 
   const modulesWithGoals = data.filter((item) => item.goal !== null);
   const avgGoal = modulesWithGoals.length > 0
@@ -93,40 +94,44 @@ export default function GoalsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.appName}>Goals</Text>
-      </View>
+      <ScreenHeader title="Goals" />
 
       {avgGoal !== null && (
         <View style={styles.summaryStrip}>
           <View style={styles.summaryItem}>
             <Text style={styles.summaryLabel}>Overall Average</Text>
-            <Text style={styles.summaryValue}>{overallAverage.toFixed(1)}%</Text>
+            <Text style={styles.summaryValue}>
+              {overallAverage !== null ? `${overallAverage.toFixed(1)}%` : '—'}
+            </Text>
           </View>
           <View style={styles.summaryDivider} />
           <View style={styles.summaryItem}>
             <Text style={styles.summaryLabel}>Avg Goal</Text>
             <Text style={styles.summaryValue}>{avgGoal.toFixed(1)}%</Text>
           </View>
-          <View style={styles.summaryStatus}>
-            <Text style={[
-              styles.summaryStatusText,
-              { color: overallAverage >= avgGoal ? colours.success : colours.warning }
-            ]}>
-              {overallAverage >= avgGoal ? '↑ On Track' : '↓ Below'}
-            </Text>
-          </View>
+          {overallAverage !== null && (
+            <View style={styles.summaryStatus}>
+              <Text style={[
+                styles.summaryStatusText,
+                { color: meetsTarget(overallAverage, avgGoal) ? colours.success : colours.warning }
+              ]}>
+                {meetsTarget(overallAverage, avgGoal) ? '↑ On track' : '↓ Below'}
+              </Text>
+            </View>
+          )}
         </View>
       )}
 
 
       <FlatList
+        ref={listRef}
         data={data}
         keyExtractor={(item) => item.module.id}
         contentContainerStyle={styles.list}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colours.accent} colors={[colours.accent]} />}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Ionicons name="trophy-outline" size={48} color={colours.grey3} />
+            <AppIcon name="trophy" size={64} />
             <Text style={styles.emptyTitle}>No modules yet</Text>
             <Text style={styles.emptyText}>Add modules in the Marks tab first</Text>
           </View>
@@ -141,7 +146,7 @@ export default function GoalsScreen() {
             ? calculateRequiredScore(item.assessments, item.goal.targetPercentage)
             : null;
           const remaining = calculateRemainingWeighting(item.assessments);
-          const { color, bg } = feasibilityConfig(feasibility);
+          const { color, bg } = feasibilityConfig(feasibility, colours);
           const progress = item.goal
             ? Math.min((avg / item.goal.targetPercentage) * 100, 100)
             : 0;
@@ -165,7 +170,9 @@ export default function GoalsScreen() {
 
               <View style={styles.pctRow}>
                 <Text style={styles.pctLabel}>
-                  Current: <Text style={styles.pctValue}>{avg.toFixed(1)}%</Text>
+                  Current: <Text style={styles.pctValue}>
+                    {item.assessments.length > 0 ? `${avg.toFixed(1)}%` : '—'}
+                  </Text>
                 </Text>
                 {item.goal && (
                   <Text style={styles.pctLabel}>
@@ -180,16 +187,23 @@ export default function GoalsScreen() {
                 </View>
               )}
 
-              {item.goal ? (
+              {item.goal && feasibility === 'Reached' ? (
+                <View style={styles.reachedRow}>
+                  <AppIcon name="trophy" size={16} />
+                  <Text style={[styles.noteText, styles.reachedText]}>
+                    {remaining <= 0
+                      ? 'Goal achieved!'
+                      : `Goal secured · ${remaining.toFixed(0)}% weighting left`}
+                  </Text>
+                </View>
+              ) : item.goal ? (
                 <Text style={styles.noteText}>
-                  {feasibility === 'Reached'
-                    ? '🎉 Goal achieved!'
-                    : required !== null && remaining > 0
+                  {required !== null && remaining > 0
                     ? `Need ${required.toFixed(1)}% on remaining · ${remaining.toFixed(0)}% weighting left`
-                    : 'No remaining weighting — add more assessments'}
+                    : 'All weighting complete — finished below goal'}
                 </Text>
               ) : (
-                <Text style={[styles.noteText, { color: colours.primary }]}>
+                <Text style={[styles.noteText, { color: colours.accent }]}>
                   Tap to set a goal →
                 </Text>
               )}
@@ -201,24 +215,16 @@ export default function GoalsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colours: Palette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colours.background },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: {
-    paddingHorizontal: spacing.screenPadding,
-    paddingTop: 56,
-    paddingBottom: 12,
-    backgroundColor: colours.white,
-    borderBottomWidth: 1,
-    borderBottomColor: colours.grey3,
-  },
-  appName: { fontSize: 22, fontWeight: '800', color: colours.primary, letterSpacing: -0.5 },
-  list: { padding: spacing.screenPadding, paddingBottom: 100 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colours.background },
+  // No + button on Goals, so only a small gap above the tab bar
+  list: { padding: spacing.screenPadding, paddingBottom: 16 },
   empty: { alignItems: 'center', paddingTop: 60, gap: 8 },
   emptyTitle: { fontSize: 17, fontWeight: '700', color: colours.grey5 },
   emptyText: { fontSize: 14, color: colours.grey4 },
   card: {
-    backgroundColor: colours.white,
+    backgroundColor: colours.card,
     borderRadius: spacing.borderRadius,
     padding: 16,
     marginBottom: 12,
@@ -251,6 +257,8 @@ const styles = StyleSheet.create({
   },
   barFill: { height: '100%', borderRadius: 3 },
   noteText: { fontSize: 12, color: colours.grey5, marginTop: 2 },
+  reachedRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+  reachedText: { marginTop: 0, color: colours.success, fontWeight: '600' },
 
     summaryStrip: {
     backgroundColor: colours.primary,
@@ -262,7 +270,7 @@ const styles = StyleSheet.create({
   summaryValue: {
     fontSize: 36,
     fontWeight: '800',
-    color: colours.white,
+    color: colours.onPrimary,
     letterSpacing: -1,
   },
   summaryItem: { flex: 1 },
