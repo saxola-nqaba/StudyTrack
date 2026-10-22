@@ -88,8 +88,13 @@ export default function GoalsScreen() {
   const overallAverage = calculateOverallAverage(data);
 
   const modulesWithGoals = data.filter((item) => item.goal !== null);
-  const avgGoal = modulesWithGoals.length > 0
-    ? modulesWithGoals.reduce((sum, item) => sum + (item.goal?.targetPercentage ?? 0), 0) / modulesWithGoals.length
+  // Compare like with like: once some modules have marks, the average goal
+  // only includes those modules (unstarted ones can't be "below" yet)
+  const goalPool = modulesWithGoals.some((m) => m.assessments.length > 0)
+    ? modulesWithGoals.filter((m) => m.assessments.length > 0)
+    : modulesWithGoals;
+  const avgGoal = goalPool.length > 0
+    ? goalPool.reduce((sum, item) => sum + (item.goal?.targetPercentage ?? 0), 0) / goalPool.length
     : null;
 
   return (
@@ -214,9 +219,11 @@ export default function GoalsScreen() {
                 </View>
               ) : item.goal ? (
                 <Text style={styles.noteText}>
-                  {required !== null && remaining > 0
+                  {feasibility === 'Not Started'
+                    ? `No marks yet · aim for ${item.goal.targetPercentage}% across your assessments`
+                    : required !== null && remaining > 0
                     ? `Need ${required.toFixed(1)}% on remaining · ${remaining.toFixed(0)}% weighting left`
-                    : 'All weighting complete — finished below goal'}
+                    : 'All weighting complete, finished below goal'}
                 </Text>
               ) : (
                 <Text style={[styles.noteText, { color: colours.accent }]}>

@@ -32,6 +32,7 @@ Built from a high-fidelity prototype originally designed as a final-year univers
   - 🟡 **At Risk** — requires 80–90% on remaining assessments
   - 🟠 **Unlikely** — requires 90–100% on remaining assessments
   - 🔴 **Impossible** — would require more than 100%, or all weighting is complete and the target was missed
+  - ⚪ **Not Started** — a goal is set but no marks are entered yet
 
 ### Deadlines
 - Track assignment and assessment due dates
@@ -98,6 +99,7 @@ requiredScore        = ((target - currentWeightedScore) / remainingWeighting) ×
 
 ### Goal Feasibility Thresholds
 ```
+no marks yet       →  Not Started
 no weighting left  →  Reached if average ≥ target, otherwise Impossible
 required ≤ 0%      →  Reached (secured)
 required > 100%    →  Impossible

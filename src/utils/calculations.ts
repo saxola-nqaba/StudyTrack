@@ -58,6 +58,7 @@ export type FeasibilityStatus =
   | 'At Risk'
   | 'Unlikely'
   | 'Impossible'
+  | 'Not Started'
   | 'No Goal';
 
 export const calculateFeasibility = (
@@ -65,6 +66,10 @@ export const calculateFeasibility = (
   targetPercentage: number | null
 ): FeasibilityStatus => {
   if (targetPercentage === null) return 'No Goal';
+
+  // No marks yet: nothing to judge, so no On Track / At Risk badge
+  const marked = assessments.filter((a) => a.outOf > 0 && a.weighting > 0);
+  if (marked.length === 0) return 'Not Started';
 
   const current = calculateWeightedAverage(assessments);
   const remaining = calculateRemainingWeighting(assessments);

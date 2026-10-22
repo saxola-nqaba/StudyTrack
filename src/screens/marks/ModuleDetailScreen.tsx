@@ -126,10 +126,10 @@ export default function ModuleDetailScreen() {
                   {!goal || required === null
                     ? `No goal set · ${remaining.toFixed(0)}% weighting still to come`
                     : required <= 0
-                    ? `Goal secured — you'll reach ${goal.targetPercentage}% even with 0% on the remaining ${remaining.toFixed(0)}%`
+                    ? `Goal secured, you'll reach ${goal.targetPercentage}% even with 0% on the remaining ${remaining.toFixed(0)}%`
                     : required <= 100
                     ? `Need ${required.toFixed(1)}% on the remaining ${remaining.toFixed(0)}% to reach your ${goal.targetPercentage}% goal`
-                    : `Goal needs ${required.toFixed(1)}% on the remaining ${remaining.toFixed(0)}% — consider adjusting your target`}
+                    : `Goal needs ${required.toFixed(1)}% on the remaining ${remaining.toFixed(0)}%, consider adjusting your target`}
                 </Text>
               </View>
             )}

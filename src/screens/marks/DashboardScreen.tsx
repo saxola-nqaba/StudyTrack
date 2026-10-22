@@ -87,8 +87,13 @@ export default function DashboardScreen() {
   const overallAverage = calculateOverallAverage(modules);
 
   const modulesWithGoals = modules.filter((m) => m.goal !== null);
-  const overallGoal = modulesWithGoals.length > 0
-    ? modulesWithGoals.reduce((sum, m) => sum + (m.goal?.targetPercentage ?? 0), 0) / modulesWithGoals.length
+  // Compare like with like: once some modules have marks, the average goal
+  // only includes those modules (unstarted ones can't be "below" yet)
+  const goalPool = modulesWithGoals.some((m) => m.assessments.length > 0)
+    ? modulesWithGoals.filter((m) => m.assessments.length > 0)
+    : modulesWithGoals;
+  const overallGoal = goalPool.length > 0
+    ? goalPool.reduce((sum, m) => sum + (m.goal?.targetPercentage ?? 0), 0) / goalPool.length
     : null;
 
   if (loading) {

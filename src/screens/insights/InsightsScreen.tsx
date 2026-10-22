@@ -231,7 +231,7 @@ export default function InsightsScreen() {
             <View style={styles.focusStrip}>
               <Ionicons name="warning-outline" size={14} color={colours.danger} />
               <Text style={styles.focusText}>
-                Focus on <Text style={{ fontWeight: '700' }}>{focusModule.module.name}</Text> — furthest from its goal
+                Focus on <Text style={{ fontWeight: '700' }}>{focusModule.module.name}</Text>, furthest from its goal
               </Text>
             </View>
           )}
@@ -261,8 +261,10 @@ export default function InsightsScreen() {
                   <View style={styles.goalRowLeft}>
                     <Text style={styles.goalModuleName}>{item.module.name}</Text>
                     <Text style={styles.goalDetail}>
-                      {item.average.toFixed(1)}% → {item.goal?.targetPercentage}%
-                      {required !== null && remaining > 0 && required > 0
+                      {feasibility === 'Not Started'
+                        ? `No marks yet · goal ${item.goal?.targetPercentage}%`
+                        : `${item.average.toFixed(1)}% → ${item.goal?.targetPercentage}%`}
+                      {feasibility !== 'Not Started' && required !== null && remaining > 0 && required > 0
                         ? ` · Need ${required.toFixed(1)}% on remaining`
                         : ''}
                     </Text>
@@ -317,7 +319,7 @@ export default function InsightsScreen() {
             <View style={styles.weightingAlert}>
               <Ionicons name="information-circle-outline" size={14} color={colours.warning} />
               <Text style={styles.weightingAlertText}>
-                {weightingFlags.length} module{weightingFlags.length > 1 ? 's' : ''} {weightingFlags.length > 1 ? 'have' : 'has'} incomplete weighting — averages may not be accurate
+                {weightingFlags.length} module{weightingFlags.length > 1 ? 's' : ''} {weightingFlags.length > 1 ? 'have' : 'has'} incomplete weighting, so averages may not be accurate
               </Text>
             </View>
           )}
@@ -365,7 +367,7 @@ export default function InsightsScreen() {
             <View style={styles.overdueAlert}>
               <Ionicons name="alert-circle-outline" size={14} color={colours.danger} />
               <Text style={styles.overdueAlertText}>
-                {overdueDeadlines.length} overdue deadline{overdueDeadlines.length > 1 ? 's' : ''} — check the Deadlines tab
+                {overdueDeadlines.length} overdue deadline{overdueDeadlines.length > 1 ? 's' : ''}, check the Deadlines tab
               </Text>
             </View>
           )}
