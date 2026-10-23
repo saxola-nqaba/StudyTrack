@@ -8,7 +8,6 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Text } from '../../components/AppText';
-import { Ionicons } from '@expo/vector-icons';
 import AppIcon from '../../components/AppIcon';
 import { fetchModules } from '../../services/modules';
 import { fetchAssessments } from '../../services/assessments';
@@ -229,7 +228,7 @@ export default function InsightsScreen() {
 
           {focusModule && (
             <View style={styles.focusStrip}>
-              <Ionicons name="warning-outline" size={14} color={colours.danger} />
+              <AppIcon name="warning" size={18} />
               <Text style={styles.focusText}>
                 Focus on <Text style={{ fontWeight: '700' }}>{focusModule.module.name}</Text>, furthest from its goal
               </Text>
@@ -317,7 +316,7 @@ export default function InsightsScreen() {
 
           {weightingFlags.length > 0 && (
             <View style={styles.weightingAlert}>
-              <Ionicons name="information-circle-outline" size={14} color={colours.warning} />
+              <AppIcon name="info" size={18} />
               <Text style={styles.weightingAlertText}>
                 {weightingFlags.length} module{weightingFlags.length > 1 ? 's' : ''} {weightingFlags.length > 1 ? 'have' : 'has'} incomplete weighting, so averages may not be accurate
               </Text>
@@ -355,7 +354,7 @@ export default function InsightsScreen() {
 
           {nextDeadline && (
             <View style={styles.nextDeadline}>
-              <Ionicons name="time-outline" size={14} color={colours.accent} />
+              <AppIcon name="clock" size={18} />
               <Text style={styles.nextDeadlineText}>
                 Next: <Text style={{ fontWeight: '700' }}>{nextDeadline.assessmentName}</Text>
                 {' '}({nextDeadline.moduleName}) · {getDeadlineDate(nextDeadline.date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -365,7 +364,7 @@ export default function InsightsScreen() {
 
           {overdueDeadlines.length > 0 && (
             <View style={styles.overdueAlert}>
-              <Ionicons name="alert-circle-outline" size={14} color={colours.danger} />
+              <AppIcon name="warning" size={18} />
               <Text style={styles.overdueAlertText}>
                 {overdueDeadlines.length} overdue deadline{overdueDeadlines.length > 1 ? 's' : ''}, check the Deadlines tab
               </Text>

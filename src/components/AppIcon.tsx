@@ -18,6 +18,9 @@ const ICONS = {
   trophy: require('../../assets/icons/trophy.png'),
   calendar: require('../../assets/icons/calendar.png'),
   bulb: require('../../assets/icons/bulb.png'),
+  warning: require('../../assets/icons/warning.png'),
+  info: require('../../assets/icons/info.png'),
+  clock: require('../../assets/icons/clock.png'),
 } as const;
 
 export type AppIconName = keyof typeof ICONS;
